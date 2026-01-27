@@ -229,7 +229,7 @@ def main():
                     if case_type == '카명': mode = "재산명시"
                     elif case_type == '차전': mode = "지급명령"
                     elif case_type in ['머', '조정']: mode = "조정"
-                    elif case_type == '카단': mode = "가압류가처분"  # [수정] 모드 할당
+                    elif case_type in ['카단','카합']: mode = "가압류가처분"  # [수정] 모드 할당
                     else: mode = "소송"
                 else:
                     mode = "진행상세"
@@ -269,4 +269,5 @@ def main():
                         st.download_button(f"📥 {m_name} 엑셀 다운로드", to_excel(res_df), f"{m_name}.xlsx", key=f"dl_{m_name}")
 
 if __name__ == "__main__":
+
     main()
