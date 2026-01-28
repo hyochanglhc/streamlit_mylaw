@@ -87,14 +87,19 @@ class CourtAutomation:
         time.sleep(0.5)
         
         Select(self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_csYr")).select_by_visible_text(str(row['연도']))
+        time.sleep(0.5)
+        
         Select(self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_csDvsCd")).select_by_visible_text(row['구분'])
+        time.sleep(0.5)
         
         serial = self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_ibx_csSerial")
         serial.clear()
         serial.send_keys(str(row['번호']))
+        time.sleep(0.5)
         
         name = self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_ibx_btprNm")
         name.clear()
+        time.sleep(1)        
         name.send_keys(row['관계자'])
 
     def quit(self):
@@ -310,3 +315,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
