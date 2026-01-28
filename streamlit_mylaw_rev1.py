@@ -228,7 +228,7 @@ def main():
         
         col1, col2 = st.columns([1, 1])
         with col1:
-            input_text = st.text_area("사건 정보 입력", height=200, placeholder="서울중앙지방법원\t2024가단12345\t홍길동")
+            input_text = st.text_area("사건정보입력(엑셀 3개의 칼럼에서 복사하여 붙이세요)", height=200, placeholder="서울중앙지방법원\t2024가단12345\t홍길동")
             mode_choice = st.radio("조회 방식 선택", ["소송조회(사건번호분류)", "일자별 진행상세 조회"], horizontal=True)
 
         c1, c2, c3 = st.columns([1, 1, 1])
@@ -319,3 +319,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
