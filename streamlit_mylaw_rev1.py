@@ -263,12 +263,12 @@ def main():
             for i, row in df.iterrows():
                 if st.session_state.stop_requested: break
                 
-                if "자동 분류" in mode_choice:
+                if "소송조회(사건번호분류)" in mode_choice:
                     case_type = str(row['구분']).strip()
                     if case_type == '카명': mode = "재산명시"
                     elif case_type == '차전': mode = "지급명령"
                     elif case_type in ['머', '조정']: mode = "조정"
-                    elif case_type == '카단': mode = "가압류가처분"  # [수정] 모드 할당
+                    elif case_type in ['카단','카합']: mode = "가압류가처분"  # [수정] 모드 할당
                     else: mode = "소송"
                 else:
                     mode = "진행상세"
