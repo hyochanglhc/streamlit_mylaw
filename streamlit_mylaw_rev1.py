@@ -8,7 +8,6 @@ import numpy as np
 from datetime import datetime
 from bs4 import BeautifulSoup as bs
 from io import BytesIO
-import os
 
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -19,10 +18,15 @@ from selenium.webdriver.common.alert import Alert
 from selenium.common.exceptions import NoAlertPresentException
 
 # ==================== 설정 ====================
+import os
+# 환경 변수에 따라 경로 설정 (윈도우면 로컬 경로, 아니면 리눅스 기본 경로)
 if os.name == 'nt':  # Windows
     pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 else:  # Linux (Streamlit Cloud)
     pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+
+#TESSERACT_PATH = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+#pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 
 # ==================== CourtAutomation 클래스 ====================
 class CourtAutomation:
@@ -32,7 +36,7 @@ class CourtAutomation:
 
     def _create_driver(self):
         options = Options()
-        options.add_argument("--headless")
+        options.add_argument("--headless")  # 서버 환경을 위해 화면 없이 실행
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
@@ -44,8 +48,7 @@ class CourtAutomation:
         answer_box_id = "mf_ssgoTopMainTab_contents_content1_body_ibx_answer"
         search_btn_id = "mf_ssgoTopMainTab_contents_content1_body_btn_srchCs"
 
-        for attempt in range(15):
-            if st.session_state.stop_requested: break
+        for attempt in range(10):
             try:
                 element = self.wait.until(EC.presence_of_element_located((By.XPATH, captcha_img_xpath)))
                 screenshot = element.screenshot_as_png
@@ -72,7 +75,8 @@ class CourtAutomation:
                 
                 self.driver.find_element(By.ID, reload_btn_id).click()
                 time.sleep(1.5)
-            except: continue
+            except:
+                continue
         return None
 
     def navigate_to_search(self, row):
@@ -81,19 +85,17 @@ class CourtAutomation:
         
         Select(self.wait.until(EC.presence_of_element_located((By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_cortCd")))).select_by_visible_text(row['법원'])
         time.sleep(0.5)
+        
         Select(self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_csYr")).select_by_visible_text(str(row['연도']))
-        time.sleep(0.5)
         Select(self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_csDvsCd")).select_by_visible_text(row['구분'])
-        time.sleep(0.5)        
+        
         serial = self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_ibx_csSerial")
         serial.clear()
-        time.sleep(0.5)
         serial.send_keys(str(row['번호']))
         
         name = self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_ibx_btprNm")
         name.clear()
         name.send_keys(row['관계자'])
-        time.sleep(0.1)
 
     def quit(self):
         self.driver.quit()
@@ -115,38 +117,26 @@ def parse_litigation(soup, row):
         '법원': row['법원'], '사건번호': tds[0].split('[')[0], '관계자': row['관계자'],
         '사건명': tds[1].replace("[전자]",""), '원고': tds[2], '피고': tds[3], '접수일': tds[5].replace(".","-"),
         '소송결과': tds[6], '원고소가': tds[7], '확정일': tds[20].replace(".","-") if len(tds) > 20 else "",
-        '기일일자': date_info[0], '진행경과': date_info[4]    
-    }
-
-def parse_preattach(soup, row):
-    """가압류가처분(카단) 전용 파싱"""
-    tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
-    if not tbl: return None
-    tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
-    
-    # 카단 사건은 일반 사건과 테이블 구조가 다르므로 인덱스 체크 필수
-    return {
-        '법원': row['법원'], 
-        '사건번호': tds[0].split('[')[0] if len(tds) > 0 else "",
-        '관계자': row['관계자'],
-        '사건명': tds[1] if len(tds) > 1 else "",
-        '채권자': tds[2] if len(tds) > 2 else "",
-        '채무자': tds[3] if len(tds) > 3 else "",
-        '청구금액': tds[5] if len(tds) > 5 else "",
-        '접수일': tds[8] if len(tds) > 8 else "",
-        '종국결과': tds[9] if len(tds) > 9 else "",
-        '결정문송달일': tds[19] if len(tds) > 19 else ""
+        '기일일자': date_info[0], '진행경과': date_info[4]
     }
 
 def parse_nego(soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
-    if not tbl: return None
     tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
+    
+    # 기일 정보 처리
+    tbl_date = soup.find('table', id=lambda x: x and 'rcntDxdyLst' in x)
+    date_info = [""] * 5
+    if tbl_date and tbl_date.find('td'):
+        g = list(zip(*[iter(tbl_date.find_all('td'))] * 5))
+        date_info = [','.join(td.text.strip() for td in [group[idx] for group in g]) for idx in range(5)]
     return {
         '법원': row['법원'], '사건번호': tds[0].split('[')[0], '관계자': row['관계자'],
         '사건명': tds[1].replace("[전자]",""), '원고': tds[2], '피고': tds[3], '접수일': tds[5].replace(".","-"),
-        '수리구분': tds[9] if len(tds) > 9 else "", '확정일': tds[16] if len(tds) > 16 else ""
+        '소송결과': tds[6], '원고소가': tds[7], '수리구분': tds[9], '확정일': tds[16],
+        '일자': date_info[0], '진행경과': date_info[4]
     }
+    
 
 def parse_payment_order(soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
@@ -195,138 +185,128 @@ def parse_detail(driver, row):
         return rows_data
     except: return []
 
-
-
-
+# ==================== 데이터 유틸리티 ====================
 def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False)
+        df.to_excel(writer, index=False, sheet_name='Sheet1')
     return output.getvalue()
 
 # ==================== Streamlit 메인 앱 ====================
 def main():
-    st.set_page_config(page_title="나의사건조회", layout="wide")
-    
-    # 세션 초기화
-    if 'final_results' not in st.session_state: st.session_state.final_results = None
-    if 'is_running' not in st.session_state: st.session_state.is_running = False
-    if 'stop_requested' not in st.session_state: st.session_state.stop_requested = False
-
+    st.set_page_config(page_title="법원 사건조회", layout="wide")
     st.markdown("""<style>
-                div[class*="stRadio"] label p { font-size: 20px !important; font-weight: bold; color: #1E90FF; }
-                .stButton>button { width: 100%; font-weight: bold; }
-                </style>""", unsafe_allow_html=True)
+                /* 라디오 버튼 전체 옵션 텍스트 크기 */
+                div[data-testid="stMarkdownContainer"] p {
+                    font-size: 18px !important;
+                }
+                /* 라디오 버튼의 개별 항목(label) 텍스트 크기 */
+                div[class*="stRadio"] label p {
+                    font-size: 20px !important;
+                    font-weight: bold;
+                }
+                </style>
+                """, unsafe_allow_html=True)
 
     with st.sidebar:
-        selected = option_menu("메인 메뉴", ["홈", "소송현황조회"], icons=['house', 'search'], default_index=1)
+        selected = option_menu(
+            "나의사건현황", ["홈", "소송현황조회"],
+            icons=['house', 'search'],
+            menu_icon="cast", default_index=1,
+        )
 
     if selected == "소송현황조회":
-        st.title("⚖️ 나의 사건 현황 조회")
-        
+        st.title("⚖️ 소송 현황 자동 조회")
+        st.info("법원 / 사건번호 / 관계자 정보를 복사하여 입력창에 붙여넣으세요.")
+
         col1, col2 = st.columns([1, 1])
         with col1:
-            input_text = st.text_area("사건 정보 입력", height=200, placeholder="서울중앙지방법원\t2024가단12345\t홍길동")
-            mode_choice = st.radio("조회 방식 선택", ["자동 분류 (사건번호 기준)", "일자별 진행상세 조회"], horizontal=True)
+            input_text = st.text_area("사건 정보 입력 (탭 구분)", height=250, placeholder="서울중앙지방법원\t2024가단12345\t홍길동")          
+            
+        mode_choice = st.radio("조회 방식 선택", ["자동 분류 (사건번호 기준)", "일자별 진행상세 조회"],horizontal=True)
 
-        c1, c2, c3 = st.columns([1, 1, 1])
-        with c1: start_btn = st.button("조회 시작 🚀", disabled=st.session_state.is_running)
-        with c2: 
-            if st.button("🛑 조회 중단"):
-                st.session_state.stop_requested = True
-                st.warning("중단 요청됨...")
-        with c3:
-            if st.button("🧹 결과 초기화"):
-                st.session_state.final_results = None
-                st.rerun()
+        if st.button("조회 시작 🚀"):
+            if not input_text.strip():
+                st.error("데이터를 입력해 주세요.")
+                return
 
-        if start_btn and input_text:
+            # 데이터프레임 파싱
             try:
                 lines = [line.split("\t") for line in input_text.strip().split("\n") if line.strip()]
                 df = pd.DataFrame(lines, columns=['법원', '사건번호', '관계자'])
                 extracted = df['사건번호'].str.extract(r'^(\d{4})\s*([^\d\s]+)\s*(\d+)$')
+                #extracted = df['사건번호'].str.extract(r'^(\d{4})([^\d\s]+)(\d+)$') #streamlit은 clipboard사용안됨.
                 df['연도'], df['구분'], df['번호'] = extracted[0], extracted[1], extracted[2]
-                df = df.dropna(subset=['연도', '구분', '번호'])
+                df = df.dropna()
             except:
-                st.error("데이터 파싱 실패. 형식을 확인하세요.")
+                st.error("데이터 형식이 잘못되었습니다. [법원(Tab)사건번호(Tab)관계자] 형식을 확인하세요.")
                 return
 
-            st.session_state.is_running = True
-            st.session_state.stop_requested = False
-            
-            # [수정] "가압류가처분" 키 추가
-            temp_results = {"소송": [], "지급명령": [], "재산명시": [], "조정": [], "가압류가처분": [], "진행상세": []}
+            # 결과 저장용 딕셔너리 (칼럼 불일치 해결)
+            results_dict = {"소송": [], "지급명령": [], "재산명시": [], "조정": [], "진행상세": [], "가압류가처분": []}
             
             bot = CourtAutomation()
             progress_bar = st.progress(0)
             status_text = st.empty()
 
             for i, row in df.iterrows():
-                if st.session_state.stop_requested: break
-                
-                # 변수 초기화 (에러 방지 핵심)
-                data = None 
-                
-                # 모드 결정 로직
-                if "자동 분류" in mode_choice:
-                    case_type = str(row['구분']).strip()
-                    if case_type == '카명': mode = "재산명시"
-                    elif case_type == '차전': mode = "지급명령"
-                    elif case_type in ['머', '조정']: mode = "조정"
-                    elif case_type in ['카단', '카합']: mode = "가압류가처분"
-                    else: mode = "소송"
-                else:
-                    mode = "진행상세"
-
-                status_text.info(f"[{i+1}/{len(df)}] {row['사건번호']} 조회 중... ({mode})")
-                
                 try:
+                    # 모드 결정
+                    if mode_choice == "자동 분류 (사건번호 기준)":
+                        case_type = row['구분']
+                        if case_type == '카명': mode = "재산명시"
+                        elif case_type == '차전': mode = "지급명령"
+                        elif case_type == '머': mode = "조정"
+                        else: mode = "소송"
+                    else:
+                        mode = "진행상세"
+
+                    status_text.text(f"처리 중 ({i+1}/{len(df)}): {row['사건번호']} -> {mode}")
                     bot.navigate_to_search(row)
                     soup = bot.solve_captcha()
                     
-                    # soup이 정상적으로 생성된 경우에만 파싱 진행
-                    if soup:
-                        if mode == "소송": 
-                            data = parse_litigation(soup, row)
-                        elif mode == "가압류가처분": 
-                            data = parse_preattach(soup, row)
-                        elif mode == "진행상세": 
-                            data = parse_detail(bot.driver, row)
-                        elif mode == "지급명령": 
-                            data = parse_payment_order(soup, row)
-                        elif mode == "재산명시": 
-                            data = parse_property(bot.driver, soup, row)
+                    if mode == "소송": data = parse_litigation(soup, row)
+                    elif mode == "진행상세": data = parse_detail(bot.driver, row)
+                    elif mode == "조정": data = parse_nego(soup, row)
+                    elif mode == "지급명령": data = parse_payment_order(soup, row)
+                    elif mode == "재산명시": data = parse_property(bot.driver, soup, row)
 
-                        # data가 정상적으로 추출된 경우에만 결과 딕셔너리에 추가
-                        if data:
-                            if isinstance(data, list): 
-                                temp_results[mode].extend(data)
-                            else: 
-                                temp_results[mode].append(data)
-                    else:
-                        st.warning(f"{row['사건번호']}: 캡차 해제 실패로 건너뜁니다.")
-
+                    if data:
+                        if isinstance(data, list): results_dict[mode].extend(data)
+                        else: results_dict[mode].append(data)
                 except Exception as e:
-                    st.error(f"{row['사건번호']} 처리 중 시스템 오류: {e}")
+                    st.warning(f"{row['사건번호']} 조회 중 오류 발생: {e}")
                 
                 progress_bar.progress((i + 1) / len(df))
 
             bot.quit()
-            st.session_state.final_results = temp_results
-            st.session_state.is_running = False
-            st.rerun()
+            status_text.success("조회 업무가 완료되었습니다.")
 
-        # 결과 출력 (세션 유지)
-        if st.session_state.final_results:
+            # 결과 출력 영역
             st.markdown("---")
-            active_data = {k: v for k, v in st.session_state.final_results.items() if v}
-            if active_data:
-                tabs = st.tabs(list(active_data.keys()))
-                for idx, (m_name, m_list) in enumerate(active_data.items()):
+            active_modes = [m for m, res in results_dict.items() if res]
+            
+            if active_modes:
+                tabs = st.tabs(active_modes)
+                for idx, mode_name in enumerate(active_modes):
                     with tabs[idx]:
-                        res_df = pd.DataFrame(m_list)
-                        st.dataframe(res_df, use_container_width=True, hide_index=True)
-                        st.download_button(f"📥 {m_name} 엑셀 다운로드", to_excel(res_df), f"{m_name}.xlsx", key=f"dl_{m_name}")
+                        res_df = pd.DataFrame(results_dict[mode_name])
+                        st.dataframe(res_df, use_container_width=True)
+                        
+                        excel_data = to_excel(res_df)
+                        st.download_button(
+                            label=f"📥 {mode_name} 결과 엑셀 다운로드",
+                            data=excel_data,
+                            file_name=f"{mode_name}_{datetime.now().strftime('%y%m%d_%H%M')}.xlsx",
+                            mime="application/vnd.ms-excel",
+                            key=f"dl_{mode_name}"
+                        )
+            else:
+                st.warning("조회된 결과가 없습니다.")
+
+    elif selected == "홈":
+        st.subheader("🏠 법원 사건조회 자동화 도구")
+        st.write("이 도구는 대법원 나의사건조회 서비스를 자동화하여 다량의 사건 현황을 한 번에 파악할 수 있게 도와줍니다.")
 
 if __name__ == "__main__":
     main()
