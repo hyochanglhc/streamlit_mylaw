@@ -254,7 +254,7 @@ def main():
             st.session_state.stop_requested = False
             
             # [수정] "가압류가처분" 키 추가
-            temp_results = {"소송": [], "지급명령": [], "재산명시": [], "조정": [], "가압류가처분": [], "진행상세": []}
+            results_dict = {"소송": [], "지급명령": [], "재산명시": [], "조정": [], "가압류가처분": [], "진행상세": []}
             
             bot = CourtAutomation()
             progress_bar = st.progress(0)
@@ -286,27 +286,36 @@ def main():
                     elif mode == "재산명시": data = parse_property(bot.driver, soup, row)
 
                     if data:
-                        if isinstance(data, list): temp_results[mode].extend(data)
-                        else: temp_results[mode].append(data)
+                        if isinstance(data, list): results_dict[mode].extend(data)
+                        else: results_dict[mode].append(data)
                 
                 progress_bar.progress((i + 1) / len(df))
 
             bot.quit()
-            st.session_state.final_results = temp_results
-            st.session_state.is_running = False
-            st.rerun()
-
-        # 결과 출력 (세션 유지)
-        if st.session_state.final_results:
             st.markdown("---")
-            active_data = {k: v for k, v in st.session_state.final_results.items() if v}
-            if active_data:
-                tabs = st.tabs(list(active_data.keys()))
-                for idx, (m_name, m_list) in enumerate(active_data.items()):
+            active_modes = [m for m, res in results_dict.items() if res]
+            
+            if active_modes:
+                tabs = st.tabs(active_modes)
+                for idx, mode_name in enumerate(active_modes):
                     with tabs[idx]:
-                        res_df = pd.DataFrame(m_list)
+                        res_df = pd.DataFrame(results_dict[mode_name])
                         st.dataframe(res_df, use_container_width=True, hide_index=True)
-                        st.download_button(f"📥 {m_name} 엑셀 다운로드", to_excel(res_df), f"{m_name}.xlsx", key=f"dl_{m_name}")
+                        
+                        excel_data = to_excel(res_df)
+                        st.download_button(
+                            label=f"📥 {mode_name} 결과 엑셀 다운로드",
+                            data=excel_data,
+                            file_name=f"{mode_name}_{datetime.now().strftime('%y%m%d_%H%M')}.xlsx",
+                            mime="application/vnd.ms-excel",
+                            key=f"dl_{mode_name}"
+                        )
+            else:
+                st.warning("조회된 결과가 없습니다.")
+
+    elif selected == "홈":
+        st.subheader("🏠 법원 사건조회 자동화 도구")
+        st.write("이 도구는 대법원 나의사건조회 서비스를 자동화하여 다량의 사건 현황을 한 번에 파악할 수 있게 도와줍니다.")
 
 if __name__ == "__main__":
     main()
