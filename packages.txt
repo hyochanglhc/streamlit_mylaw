@@ -1,3 +1,5 @@
+chromium
+chromium-driver
 tesseract-ocr
 tesseract-ocr-kor
 libgl1
