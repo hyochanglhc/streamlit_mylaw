@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 from streamlit_option_menu import option_menu
 import pandas as pd
@@ -102,20 +103,46 @@ class CourtAutomation:
 def parse_litigation(soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
     if not tbl: return None
-    tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
+# =============================================================================
+#     tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
+# =============================================================================
+    
+    # 2. 모든 th와 td를 추출하여 딕셔너리로 자동 매핑
+    # { "사건번호": "2024가단123", "사건명": "손해배상", ... }
+    tbl_map = {th.get_text(strip=True): td.get_text(strip=True)                
+                for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}     
     
     tbl_date = soup.find('table', id=lambda x: x and 'rcntDxdyLst' in x)
-    date_info = [""] * 5
+    date_info = ["기일미지정", "", "", "", ""] # 0번 인덱스에 기본값 설정
     if tbl_date and tbl_date.find('td'):
-        g = list(zip(*[iter(tbl_date.find_all('td'))] * 5))
-        date_info = [','.join(td.text.strip() for td in [group[idx] for group in g]) for idx in range(5)]
-
-    return {
-        '법원': row['법원'], '사건번호': tds[0].split('[')[0], '관계자': row['관계자'],
-        '사건명': tds[1].replace("[전자]",""), '원고': tds[2], '피고': tds[3], '접수일': tds[5].replace(".","-"),
-        '소송결과': tds[6], '원고소가': tds[7], '확정일': tds[20].replace(".","-") if len(tds) > 20 else "",
-        '기일일자': date_info[0], '진행경과': date_info[4]
-    }
+        all_tds = tbl_date.find_all('td')
+        if len(all_tds) >= 1: # 데이터가 1개 이상 있을 때만 파싱
+            g = list(zip(*[iter(all_tds)] * 5))
+            # 파싱된 결과가 있다면 date_info를 덮어씌움
+            parsed_dates = [','.join(group[idx].get_text(strip=True) for group in g) for idx in range(5)]
+            
+            # 만약 파싱은 됐는데 실제 내용이 비어있는 경우를 대비
+            if parsed_dates[0].strip(): 
+                date_info = parsed_dates
+                
+    tbl_map.update({
+        '법원': row.get('법원', ''),
+        '관계자': row.get('관계자', ''),
+        '기일일자': date_info[0],
+        '진행경과': date_info[4],        
+    })
+    tbl_map['사건번호'] = tbl_map['사건번호'].split('[')[0]
+    tbl_map['사건명'] = tbl_map['사건명'].replace('[전자]',"")
+    
+    return tbl_map
+# =============================================================================
+#     return {
+#         '법원': row['법원'], '사건번호': tds[0].split('[')[0], '관계자': row['관계자'],
+#         '사건명': tds[1].replace("[전자]",""), '원고': tds[2], '피고': tds[3], '접수일': tds[5].replace(".","-"),
+#         '소송결과': tds[6], '원고소가': tds[7], '확정일': tds[20].replace(".","-") if len(tds) > 20 else "",
+#         '기일일자': date_info[0], '진행경과': date_info[4]
+#     }
+# =============================================================================
 
 def parse_detail(driver, row):
     try:
@@ -138,7 +165,12 @@ def parse_preattach(soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
     if not tbl: return None
     tds = [td.get_text(strip=True) for td in tbl.find_all('td')]    
-    # 카단 사건은 일반 사건과 테이블 구조가 다르므로 인덱스 체크 필수
+    
+# =============================================================================
+#     tbl_map = {th.get_text(strip=True): td.get_text(strip=True)                
+#                 for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}     
+# =============================================================================
+    
     return {
         '법원': row['법원'], 
         '사건번호': tds[0].split('[')[0] if len(tds) > 0 else "",
@@ -216,7 +248,7 @@ def main():
     if 'stop_requested' not in st.session_state: st.session_state.stop_requested = False
 
     st.markdown("""<style>
-                div[class*="stRadio"] label p { font-size: 20px !important; font-weight: bold; color: #1E90FF; }
+                div[class*="stRadio"] label p { font-size: 18px !important; font-weight: bold; color: #1E90FF; }
                 .stButton>button { width: 100%; font-weight: bold; }
                 </style>""", unsafe_allow_html=True)
 
@@ -224,24 +256,34 @@ def main():
         selected = option_menu("메인 메뉴", ["홈", "소송현황조회"], icons=['house', 'search'], default_index=1)
 
     if selected == "소송현황조회":
-        st.title("⚖️ 나의 사건 현황 조회")
+        st.subheader("⚖️ 나의 사건 현황 조회")
         
         col1, col2 = st.columns([1, 1])
         with col1:
-            input_text = st.text_area("사건정보입력(엑셀 3개의 칼럼에서 복사하여 붙이세요)", height=200, placeholder="서울중앙지방법원\t2024가단12345\t홍길동")
+            st.markdown(":red[사건정보입력(관할법원  사건번호  관계사) 3개의 정보를 공백이나 tab으로 구분하여 붙여넣으세요]")            
+            input_text = st.text_area(
+                "사건정보입력", # 스크린 리더용 라벨
+                height=200, placeholder="서울중앙지방법원\t2024가단12345\t홍길동",
+                label_visibility="collapsed" # 실제 라벨은 보이지 않게 처리
+                )
+            
             mode_choice = st.radio("조회 방식 선택", ["소송조회(사건번호분류)", "일자별 진행상세 조회"], horizontal=True)
 
-        c1, c2, c3 = st.columns([1, 1, 1])
-        with c1: start_btn = st.button("조회 시작 🚀", disabled=st.session_state.is_running)
-        
-        with c2:
-            if st.button("🧹 결과 초기화"):
-                st.session_state.final_results = None
-                st.rerun()
+            c1, c2 = st.columns([1, 1])
+            with c1: start_btn = st.button("조회 시작 🚀", disabled=st.session_state.is_running)
+            
+            with c2:
+                if st.button("🧹 결과 초기화"):
+                    st.session_state.final_results = None
+                    # 실행 상태를 False로 변경하여 버튼 비활성화를 해제합니다.
+                    st.session_state.is_running = False 
+                    # 중지 요청 상태도 초기화해주는 것이 안전합니다.
+                    st.session_state.stop_requested = False 
+                    st.rerun()
 
         if start_btn and input_text:
             try:
-                lines = [line.split("\t") for line in input_text.strip().split("\n") if line.strip()]
+                lines = [line.split() for line in input_text.strip().split("\n") if line.strip()]
                 df = pd.DataFrame(lines, columns=['법원', '사건번호', '관계자'])
                 extracted = df['사건번호'].str.extract(r'^(\d{4})\s*([^\d\s]+)\s*(\d+)$')
                 df['연도'], df['구분'], df['번호'] = extracted[0], extracted[1], extracted[2]
@@ -292,6 +334,8 @@ def main():
                 progress_bar.progress((i + 1) / len(df))
 
             bot.quit()
+            # 조회가 모두 끝났으므로 버튼을 다시 활성화합니다.
+            st.session_state.is_running = False
             st.markdown("---")
             active_modes = [m for m, res in results_dict.items() if res]
             
@@ -301,7 +345,7 @@ def main():
                     with tabs[idx]:
                         res_df = pd.DataFrame(results_dict[mode_name])
                         if '기일일자' in res_df.columns and not res_df.empty:                            
-                            last_date = res_df['기일일자'].iloc[-1]                                                        
+                            last_date = res_df['기일일자'].iloc[-1].split(",")[-1]
                             res_df['최종일자'] = last_date
                         else:                            
                             pass
@@ -319,10 +363,8 @@ def main():
                 st.warning("조회된 결과가 없습니다.")
 
     elif selected == "홈":
-        st.subheader("🏠 법원 사건조회 자동화 도구")
-        st.write("이 도구는 대법원 나의사건조회 서비스를 자동화하여 다량의 사건 현황을 한 번에 파악할 수 있게 도와줍니다.")
+        st.subheader("🏠 나의사건조회 ")
+        st.write("대법원 나의사건조회 서비스를 자동화하여 다량의 사건 현황을 한 번에 파악할 수 있게 도와줍니다.")
 
 if __name__ == "__main__":
     main()
-
-
