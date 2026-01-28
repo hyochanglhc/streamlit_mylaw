@@ -344,9 +344,8 @@ def main():
                 for idx, mode_name in enumerate(active_modes):
                     with tabs[idx]:
                         res_df = pd.DataFrame(results_dict[mode_name])
-                        if '기일일자' in res_df.columns and not res_df.empty:                            
-                            last_date = res_df['기일일자'].iloc[-1].split(",")[-1]
-                            res_df['최종일자'] = last_date
+                        if '기일일자' in res_df.columns and not res_df.empty:
+                            res_df['최종일자'] = res_df['기일일자'].astype(str).str.split(",").str[-1]                            
                         else:                            
                             pass
                         st.dataframe(res_df, use_container_width=True, hide_index=True)
@@ -368,3 +367,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
