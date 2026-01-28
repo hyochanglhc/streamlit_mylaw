@@ -1,4 +1,3 @@
-
 import streamlit as st
 from streamlit_option_menu import option_menu
 import pandas as pd
@@ -265,30 +264,50 @@ def main():
             for i, row in df.iterrows():
                 if st.session_state.stop_requested: break
                 
+                # 변수 초기화 (에러 방지 핵심)
+                data = None 
+                
+                # 모드 결정 로직
                 if "자동 분류" in mode_choice:
                     case_type = str(row['구분']).strip()
                     if case_type == '카명': mode = "재산명시"
                     elif case_type == '차전': mode = "지급명령"
                     elif case_type in ['머', '조정']: mode = "조정"
-                    elif case_type in ['카단','카합']: mode = "가압류가처분"  # [수정] 모드 할당
+                    elif case_type in ['카단', '카합']: mode = "가압류가처분"
                     else: mode = "소송"
                 else:
                     mode = "진행상세"
 
                 status_text.info(f"[{i+1}/{len(df)}] {row['사건번호']} 조회 중... ({mode})")
-                bot.navigate_to_search(row)
-                soup = bot.solve_captcha()
                 
-                if soup:
-                    if mode == "소송": data = parse_litigation(soup, row)
-                    elif mode == "가압류가처분": data = parse_preattach(soup, row)
-                    elif mode == "진행상세": data = parse_detail(bot.driver, row)
-                    elif mode == "지급명령": data = parse_payment_order(soup, row)
-                    elif mode == "재산명시": data = parse_property(bot.driver, soup, row)
+                try:
+                    bot.navigate_to_search(row)
+                    soup = bot.solve_captcha()
+                    
+                    # soup이 정상적으로 생성된 경우에만 파싱 진행
+                    if soup:
+                        if mode == "소송": 
+                            data = parse_litigation(soup, row)
+                        elif mode == "가압류가처분": 
+                            data = parse_preattach(soup, row)
+                        elif mode == "진행상세": 
+                            data = parse_detail(bot.driver, row)
+                        elif mode == "지급명령": 
+                            data = parse_payment_order(soup, row)
+                        elif mode == "재산명시": 
+                            data = parse_property(bot.driver, soup, row)
 
-                    if data:
-                        if isinstance(data, list): temp_results[mode].extend(data)
-                        else: temp_results[mode].append(data)
+                        # data가 정상적으로 추출된 경우에만 결과 딕셔너리에 추가
+                        if data:
+                            if isinstance(data, list): 
+                                temp_results[mode].extend(data)
+                            else: 
+                                temp_results[mode].append(data)
+                    else:
+                        st.warning(f"{row['사건번호']}: 캡차 해제 실패로 건너뜁니다.")
+
+                except Exception as e:
+                    st.error(f"{row['사건번호']} 처리 중 시스템 오류: {e}")
                 
                 progress_bar.progress((i + 1) / len(df))
 
