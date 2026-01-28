@@ -260,7 +260,7 @@ def main():
         
         col1, col2 = st.columns([1, 1])
         with col1:
-            st.markdown(":red[사건정보입력(관할법원  사건번호  관계사) 3개의 정보를 공백이나 tab으로 구분하여 붙여넣으세요]")            
+            st.markdown(":red[사건정보입력(관할법원  사건번호  관계사) 3개의 정보를 tab으로 구분하여 붙여넣으세요]")            
             input_text = st.text_area(
                 "사건정보입력", # 스크린 리더용 라벨
                 height=200, placeholder="서울중앙지방법원\t2024가단12345\t홍길동",
@@ -283,7 +283,7 @@ def main():
 
         if start_btn and input_text:
             try:
-                lines = [line.split() for line in input_text.strip().split("\n") if line.strip()]
+                lines = [line.split("\t") for line in input_text.strip().split("\n") if line.strip()]
                 df = pd.DataFrame(lines, columns=['법원', '사건번호', '관계자'])
                 extracted = df['사건번호'].str.extract(r'^(\d{4})\s*([^\d\s]+)\s*(\d+)$')
                 df['연도'], df['구분'], df['번호'] = extracted[0], extracted[1], extracted[2]
@@ -367,4 +367,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
