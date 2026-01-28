@@ -105,10 +105,18 @@ def parse_litigation(soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
     if not tbl: return None
     tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
+    
+    tbl_date = soup.find('table', id=lambda x: x and 'rcntDxdyLst' in x)
+    date_info = [""] * 5
+    if tbl_date and tbl_date.find('td'):
+        g = list(zip(*[iter(tbl_date.find_all('td'))] * 5))
+        date_info = [','.join(td.text.strip() for td in [group[idx] for group in g]) for idx in range(5)]
+
     return {
         '법원': row['법원'], '사건번호': tds[0].split('[')[0], '관계자': row['관계자'],
-        '사건명': tds[1], '원고': tds[2], '피고': tds[3], '접수일': tds[5],
-        '소송결과': tds[6], '확정일': tds[20] if len(tds) > 20 else ""
+        '사건명': tds[1].replace("[전자]",""), '원고': tds[2], '피고': tds[3], '접수일': tds[5].replace(".","-"),
+        '소송결과': tds[6], '원고소가': tds[7], '확정일': tds[20].replace(".","-") if len(tds) > 20 else "",
+        '기일일자': date_info[0], '진행경과': date_info[4]    
     }
 
 def parse_preattach(soup, row):
@@ -131,17 +139,44 @@ def parse_preattach(soup, row):
         '결정문송달일': tds[19] if len(tds) > 19 else ""
     }
 
+def parse_nego(soup, row):
+    tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
+    if not tbl: return None
+    tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
+    return {
+        '법원': row['법원'], '사건번호': tds[0].split('[')[0], '관계자': row['관계자'],
+        '사건명': tds[1].replace("[전자]",""), '원고': tds[2], '피고': tds[3], '접수일': tds[5].replace(".","-"),
+        '수리구분': tds[9] if len(tds) > 9 else "", '확정일': tds[16] if len(tds) > 16 else ""
+    }
+
 def parse_payment_order(soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
     if not tbl: return None
     tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
-    return {'법원사건번호': row['법원'] + tds[0], '사건명': tds[1], '채권자': tds[2], '채무자': tds[3], '접수일': tds[5], '종국결과': tds[6]}
+    return {
+        '법원사건번호': row['법원'] + tds[0], '사건명': tds[1].replace("[전자]",""),
+        '채권자': tds[2], '채무자': tds[3], '접수일': tds[5], '종국결과': tds[6],
+        '청구금액': tds[7], '확정일': tds[14].replace(".","-") if len(tds) > 14 else ""
+    }
 
 def parse_property(driver, soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
     if not tbl: return None
     tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
-    return {'사건번호': row['법원'] + tds[0], '채권자': tds[2], '채무자': tds[3], '접수일': tds[8] if len(tds) > 8 else tds[5]}
+    try:
+        driver.find_element(By.CSS_SELECTOR, '#mf_ssgoTopMainTab_contents_content1_body_wfSsgoDetail_ssgoCsDetailTab_tab_ssgoTab2_tabHTML').click()
+        time.sleep(1)
+        sub_soup = bs(driver.page_source, "html.parser")
+        rows = sub_soup.select('tr.grid_body_row')
+        last_prog = rows[-1].find_all('td') if rows else None
+    except: last_prog = None
+    
+    return {
+        '사건번호': row['법원'] + tds[0].split('[')[0], '사건명': tds[1],
+        '채권자': tds[2], '채무자': tds[3], '접수일': tds[8].replace(".","-") if len(tds) > 8 else tds[5],
+        '마지막진행일자': last_prog[0].get_text(strip=True) if last_prog else "",
+        '진행내용': last_prog[1].get_text(strip=True) if last_prog else ""
+    }
 
 def parse_detail(driver, row):
     try:
@@ -154,9 +189,15 @@ def parse_detail(driver, row):
             for tr in tbody.find_all('tr', class_='grid_body_row'):
                 cells = tr.find_all('td')
                 if len(cells) >= 2:
-                    rows_data.append({'법원': row['법원'], '사건번호': row['사건번호'], '일자': cells[0].get_text(strip=True), '내용': cells[1].get_text(strip=True)})
+                    rows_data.append({
+                        '법원': row['법원'], '사건번호': f"{row['연도']}{row['구분']}{row['번호']}",
+                        '일자': cells[0].get_text(strip=True), '진행내용': cells[1].get_text(strip=True)
+                    })
         return rows_data
     except: return []
+
+
+
 
 def to_excel(df):
     output = BytesIO()
@@ -269,5 +310,4 @@ def main():
                         st.download_button(f"📥 {m_name} 엑셀 다운로드", to_excel(res_df), f"{m_name}.xlsx", key=f"dl_{m_name}")
 
 if __name__ == "__main__":
-
     main()
