@@ -283,8 +283,8 @@ def main():
 
         if start_btn and input_text:
             try:
-                #lines = [line.split("\t") for line in input_text.strip().split("\n") if line.strip()]
-                lines = [re.split(r'\s+', line.strip()) for line in input_text.strip().split("\n") if line.strip()]
+                lines = [line.split("\t") for line in input_text.strip().split("\n") if line.strip()]
+                #lines = [re.split(r'\s+', line.strip()) for line in input_text.strip().split("\n") if line.strip()]
                 df = pd.DataFrame(lines, columns=['법원', '사건번호', '관계자'])
                 extracted = df['사건번호'].str.extract(r'^(\d{4})\s*([^\d\s]+)\s*(\d+)$')
                 df['연도'], df['구분'], df['번호'] = extracted[0], extracted[1], extracted[2]
@@ -370,6 +370,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
