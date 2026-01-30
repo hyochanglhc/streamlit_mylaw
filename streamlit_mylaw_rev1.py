@@ -101,48 +101,87 @@ class CourtAutomation:
         
 # ==================== 파싱 함수들 ====================
 def parse_litigation(soup, row):
+    # 1. 기본 테이블 찾기
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
-    if not tbl: return None
-# =============================================================================
-#     tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
-# =============================================================================
-    
-    # 2. 모든 th와 td를 추출하여 딕셔너리로 자동 매핑
-    # { "사건번호": "2024가단123", "사건명": "손해배상", ... }
-    tbl_map = {th.get_text(strip=True): td.get_text(strip=True)                
-                for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}     
+    if not tbl:
+        return None
+    # 2. 기본 정보 파싱 (딕셔너리 컴프리헨션)
+    res = {th.get_text(strip=True): td.get_text(strip=True) 
+           for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}
     
     tbl_date = soup.find('table', id=lambda x: x and 'rcntDxdyLst' in x)
-    date_info = ["기일미지정", "", "", "", ""] # 0번 인덱스에 기본값 설정
-    if tbl_date and tbl_date.find('td'):
+    date_info = ["기일미지정"] + [""] * 4 # 기본값 설정
+    if tbl_date:
         all_tds = tbl_date.find_all('td')
-        if len(all_tds) >= 1: # 데이터가 1개 이상 있을 때만 파싱
-            g = list(zip(*[iter(all_tds)] * 5))
-            # 파싱된 결과가 있다면 date_info를 덮어씌움
-            parsed_dates = [','.join(group[idx].get_text(strip=True) for group in g) for idx in range(5)]
-            
-            # 만약 파싱은 됐는데 실제 내용이 비어있는 경우를 대비
-            if parsed_dates[0].strip(): 
-                date_info = parsed_dates
-                
-    tbl_map.update({
+        if all_tds:
+            # 5개씩 묶어서 컬럼별로 join
+            groups = [all_tds[i:i+5] for i in range(0, len(all_tds), 5)]
+            parsed = [','.join(g[idx].get_text(strip=True) for g in groups if len(g) > idx) for idx in range(5)]
+            if parsed[0].strip():
+                date_info = parsed
+    # 데이터 병합 및 가공
+    res.update({
         '법원': row.get('법원', ''),
         '관계자': row.get('관계자', ''),
         '기일일자': date_info[0],
-        '진행경과': date_info[4],        
-    })
-    tbl_map['사건번호'] = tbl_map['사건번호'].split('[')[0]
-    tbl_map['사건명'] = tbl_map['사건명'].replace('[전자]',"")
+        '진행경과': date_info[4],
+        '사건번호': str(res.get('사건번호', '')).split('[')[0].strip(),
+        '사건명': res.get('사건명', '').replace('[전자]', "").strip()
+    })    
+    # 원고수 및 소송규모 계산
+    plaintiff = res.get('원고', '')
+    match = re.search(r'외\s*(\d+)명', plaintiff)
+    res['원고수'] = int(match.group(1)) + 1 if match else 1
+    res['소송규모'] = '집단' if res['원고수'] > 5 else '개인'
+    res['판결여부'] = '판결' if res.get('종국결과') else '진행중'    
+    # 기일 관련 추가 계산
+    dates = res['기일일자']
+    has_date = dates and dates != "기일미지정"
+    res['기일차수'] = len(set(dates.split(','))) if has_date else 0 #split을 set으로 하면 중복값제외됨.
+    res['최종일자'] = dates.split(',')[-1].strip() if has_date else "기일미지정"    
+    return res
+
+def parse_nego(soup, row):    
+    tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
+    if not tbl:
+        return None    
+    res = {th.get_text(strip=True): td.get_text(strip=True) 
+           for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}
     
-    return tbl_map
-# =============================================================================
-#     return {
-#         '법원': row['법원'], '사건번호': tds[0].split('[')[0], '관계자': row['관계자'],
-#         '사건명': tds[1].replace("[전자]",""), '원고': tds[2], '피고': tds[3], '접수일': tds[5].replace(".","-"),
-#         '소송결과': tds[6], '원고소가': tds[7], '확정일': tds[20].replace(".","-") if len(tds) > 20 else "",
-#         '기일일자': date_info[0], '진행경과': date_info[4]
-#     }
-# =============================================================================
+    tbl_date = soup.find('table', id=lambda x: x and 'rcntDxdyLst' in x)
+    
+    date_info = ["기일미지정"] + [""] * 4 # 기본값 설정
+    if tbl_date:
+        all_tds = tbl_date.find_all('td')
+        if all_tds:
+            # 5개씩 묶어서 컬럼별로 join
+            groups = [all_tds[i:i+5] for i in range(0, len(all_tds), 5)]
+            parsed = [','.join(g[idx].get_text(strip=True) for g in groups if len(g) > idx) for idx in range(5)]
+            if parsed[0].strip():
+                date_info = parsed
+    # 데이터 병합 및 가공
+    res.update({
+        '법원': row.get('법원', ''),
+        '관계자': row.get('관계자', ''),
+        '기일일자': date_info[0],
+        '진행경과': date_info[4],
+        '사건번호': str(res.get('사건번호', '')).split('[')[0].strip(),
+        '사건명': res.get('사건명', '').replace('[전자]', "").strip()
+    })    
+    # 원고수 및 소송규모 계산
+    plaintiff = res.get('원고', '')
+    match = re.search(r'외\s*(\d+)명', plaintiff)
+    res['원고수'] = int(match.group(1)) + 1 if match else 1
+    res['소송규모'] = '집단' if res['원고수'] > 5 else '개인'
+    res['판결여부'] = '판결' if res.get('종국결과') else '진행중'    
+    # 기일 관련 추가 계산
+    dates = res['기일일자']
+    has_date = dates and dates != "기일미지정"
+    res['기일차수'] = len(dates.split(',')) if has_date else 0
+    res['최종일자'] = dates.split(',')[-1].strip() if has_date else "기일미지정"    
+    return res
+
+
 
 def parse_detail(driver, row):
     try:
@@ -164,43 +203,36 @@ def parse_preattach(soup, row):
     """가압류가처분(카단) 전용 파싱"""
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
     if not tbl: return None
-    tds = [td.get_text(strip=True) for td in tbl.find_all('td')]    
+# =============================================================================
+#     tds = [td.get_text(strip=True) for td in tbl.find_all('td')]    
+# =============================================================================
+    tbl_map = {th.get_text(strip=True): td.get_text(strip=True)                
+                for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}     
+    tbl_map.update({
+        '법원': row.get('법원', ''),
+        '관계자': row.get('관계자', ''),        
+    })
+    tbl_map['사건번호'] = tbl_map['사건번호'].split('[')[0]
+    tbl_map['사건명'] = tbl_map['사건명'].replace('[전자]',"")
+    
+    return tbl_map
     
 # =============================================================================
-#     tbl_map = {th.get_text(strip=True): td.get_text(strip=True)                
-#                 for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}     
+#     return {
+#         '법원': row['법원'], 
+#         '사건번호': tds[0].split('[')[0] if len(tds) > 0 else "",
+#         '관계자': row['관계자'],
+#         '사건명': tds[1] if len(tds) > 1 else "",
+#         '채권자': tds[2] if len(tds) > 2 else "",
+#         '채무자': tds[3] if len(tds) > 3 else "",
+#         '청구금액': tds[5] if len(tds) > 5 else "",
+#         '접수일': tds[8] if len(tds) > 8 else "",
+#         '종국결과': tds[9] if len(tds) > 9 else "",
+#         '결정문송달일': tds[19] if len(tds) > 19 else ""
+#     }
 # =============================================================================
-    
-    return {
-        '법원': row['법원'], 
-        '사건번호': tds[0].split('[')[0] if len(tds) > 0 else "",
-        '관계자': row['관계자'],
-        '사건명': tds[1] if len(tds) > 1 else "",
-        '채권자': tds[2] if len(tds) > 2 else "",
-        '채무자': tds[3] if len(tds) > 3 else "",
-        '청구금액': tds[5] if len(tds) > 5 else "",
-        '접수일': tds[8] if len(tds) > 8 else "",
-        '종국결과': tds[9] if len(tds) > 9 else "",
-        '결정문송달일': tds[19] if len(tds) > 19 else ""
-    }
 
-def parse_nego(soup, row):
-    tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
-    tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
-    
-    # 기일 정보 처리
-    tbl_date = soup.find('table', id=lambda x: x and 'rcntDxdyLst' in x)
-    date_info = [""] * 5
-    if tbl_date and tbl_date.find('td'):
-        g = list(zip(*[iter(tbl_date.find_all('td'))] * 5))
-        date_info = [','.join(td.text.strip() for td in [group[idx] for group in g]) for idx in range(5)]
 
-    return {
-        '법원': row['법원'], '사건번호': tds[0].split('[')[0], '관계자': row['관계자'],
-        '사건명': tds[1].replace("[전자]",""), '원고': tds[2], '피고': tds[3], '접수일': tds[5].replace(".","-"),
-        '소송결과': tds[6], '원고소가': tds[7], '수리구분': tds[9], '확정일': tds[16],
-        '일자': date_info[0], '진행경과': date_info[4]
-    }    
 
 def parse_payment_order(soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
@@ -260,7 +292,7 @@ def main():
         
         col1, col2 = st.columns([1, 1])
         with col1:
-            st.markdown(":red[사건정보입력(관할법원  사건번호  관계사) 3개의 정보를 tab으로 구분하여 붙여넣으세요]")            
+            st.markdown(""":red[사건정보입력(관할법원  사건번호  관계사) 3개의 정보를 tab으로 구분(엑셀3칸으로)하여 붙여넣으세요]""")            
             input_text = st.text_area(
                 "사건정보입력", # 스크린 리더용 라벨
                 height=200, placeholder="서울중앙지방법원\t2024가단12345\t홍길동",
@@ -283,8 +315,8 @@ def main():
 
         if start_btn and input_text:
             try:
-                lines = [line.split("\t") for line in input_text.strip().split("\n") if line.strip()]
-                #lines = [re.split(r'\s+', line.strip()) for line in input_text.strip().split("\n") if line.strip()]
+                #lines = [line.split() for line in input_text.strip().split("\n") if line.strip()]
+                lines = [re.split(r'\s+', line.strip()) for line in input_text.strip().split("\n") if line.strip()]
                 df = pd.DataFrame(lines, columns=['법원', '사건번호', '관계자'])
                 extracted = df['사건번호'].str.extract(r'^(\d{4})\s*([^\d\s]+)\s*(\d+)$')
                 df['연도'], df['구분'], df['번호'] = extracted[0], extracted[1], extracted[2]
@@ -321,7 +353,8 @@ def main():
                 soup = bot.solve_captcha()
                 
                 if soup:
-                    if mode == "소송": data = parse_litigation(soup, row)
+                    #if mode == "소송": data = parse_litigation(soup, row)
+                    if mode in "소송": data = parse_litigation(soup, row)
                     elif mode == "가압류가처분": data = parse_preattach(soup, row)
                     elif mode == "진행상세": data = parse_detail(bot.driver, row)
                     elif mode == "지급명령": data = parse_payment_order(soup, row)
@@ -338,6 +371,8 @@ def main():
             # 조회가 모두 끝났으므로 버튼을 다시 활성화합니다.
             st.session_state.is_running = False
             st.markdown("---")
+            #dictionary.items() 함수는 모든 키(Key)와 값(Value)의 쌍을 튜플(Tuple) 형태로 묶어서 반환
+            
             active_modes = [m for m, res in results_dict.items() if res]
             
             if active_modes:
@@ -345,12 +380,19 @@ def main():
                 for idx, mode_name in enumerate(active_modes):
                     with tabs[idx]:
                         res_df = pd.DataFrame(results_dict[mode_name])
-                        cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]
-                        res_df = res_df[cols]
-                        if '기일일자' in res_df.columns and not res_df.empty:
-                            res_df['최종일자'] = res_df['기일일자'].astype(str).str.split(",").str[-1]                            
-                        else:                            
-                            pass
+                        if mode_name in ['소송','조정']:
+                            col_str = '법원,사건번호,관계자,사건명,원고,피고,접수일,종국결과,원고소가,피고소가,수리구분,병합구분,상소인,상소일,판결도달일,확정일,기일일자,진행경과,원고수,소송규모,판결여부,기일차수,최종일자'
+                            cols = list(col_str.split(','))
+                        else:
+                            cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]
+                        res_df = res_df[cols]                        
+# =============================================================================
+#                         if '기일일자' in res_df.columns and not res_df.empty:                            
+#                             last_date = res_df['기일일자'].iloc[-1].split(",")[-1]
+#                             res_df['최종일자'] = last_date
+#                         else:                            
+#                             pass
+# =============================================================================
                         st.dataframe(res_df, use_container_width=True, hide_index=True)
                         
                         excel_data = to_excel(res_df)
@@ -370,9 +412,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
