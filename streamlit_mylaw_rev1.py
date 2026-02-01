@@ -132,8 +132,8 @@ def parse_litigation(soup, row):
     plaintiff = res.get('원고', '')
     match = re.search(r'외\s*(\d+)명', plaintiff)
     res['원고수'] = int(match.group(1)) + 1 if match else 1
-    res['소송규모'] = '집단' if res['원고수'] > 5 else '개인'
-    res['판결여부'] = '판결' if res.get('종국결과') else '진행중'    
+    #res['소송규모'] = '집단' if res['원고수'] > 5 else '개인'
+    #res['판결여부'] = '판결' if res.get('종국결과') else '진행중'    
     # 기일 관련 추가 계산
     dates = res['기일일자']
     has_date = dates and dates != "기일미지정"
@@ -408,5 +408,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
