@@ -380,12 +380,7 @@ def main():
                 for idx, mode_name in enumerate(active_modes):
                     with tabs[idx]:
                         res_df = pd.DataFrame(results_dict[mode_name])
-                        cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]
-#                        if mode_name in ['소송','조정']:
-#                            col_str = '법원,사건번호,관계자,사건명,원고,피고,접수일,종국결과,원고소가,피고소가,수리구분,병합구분,상소인,상소일,판결도달일,확정일,기일일자,진행경과,원고수,소송규모,판결여부,기일차수,최종일자'
-#                            cols = list(col_str.split(','))
-#                        else:
-#                            cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]
+                        cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]                        
                         res_df = res_df[cols]                        
 # =============================================================================
 #                         if '기일일자' in res_df.columns and not res_df.empty:                            
@@ -413,4 +408,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
