@@ -413,41 +413,77 @@ def main():
                     st.session_state.authenticated = False
                     st.rerun()
         
-                col_reg, col_edit = st.columns([1, 2])            
-                
-                with col_reg:
-                    st.subheader('📝 신규 사건 등록')
-                    with st.form(key='entry_form', clear_on_submit=True):
-                        court = st.text_input("법원", placeholder="예: 서울중앙지방법원")
-                        number = st.text_input("사건번호", placeholder="예: 2024가단12345")
+                # 세 개의 컬럼으로 분할 (단일등록, 대량등록, 현황보기)
+                col_single, col_multi, col_view = st.columns([1, 1, 1.5])
+        
+                # --- 1. 단일 사건 등록 (기존 Form) ---
+                with col_single:
+                    st.subheader('📝 건별 등록')
+                    with st.form(key='single_form', clear_on_submit=True):
+                        court = st.text_input("법원")
+                        number = st.text_input("사건번호")
                         rel_person = st.text_input("관계자")
                         pj_name = st.text_input("사업명")
-                        submit_button = st.form_submit_button(label="사건 등록")
-                        
-                    if submit_button:
-                        if court and number and rel_person:
-                            new_data = {'법원': court, '사건번호': number, '관계자': rel_person, '사업명': pj_name}
-                            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
-                            st.session_state.df.to_excel(fname, index=False)
-                            st.success("새 사건이 성공적으로 등록되었습니다!")
-                            st.rerun()
-                        else:
-                            st.warning("필수 항목(법원, 사건번호, 관계자)을 모두 입력해주세요.")
-                
-                with col_edit:
-                    st.subheader("📂 등록사건현황")
+                        if st.form_submit_button("사건 등록"):
+                            if court and number and rel_person:
+                                new_data = {'법원': court, '사건번호': number, '관계자': rel_person, '사업명': pj_name}
+                                st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
+                                st.session_state.df.to_excel(fname, index=False)
+                                st.success("등록 완료!")
+                                st.rerun()
+                            else:
+                                st.warning("필수 항목을 입력하세요.")
+        
+                # --- 2. 대량 사건 등록 (Text Area) ---
+                with col_multi:
+                    st.subheader('📦 대량 등록')
+                    st.caption("형식: 법원, 사건번호, 관계자, 사업명 (줄바꿈 구분)")
+                    raw_input = st.text_area("데이터 붙여넣기", placeholder="서울중앙, 2024가단1, 홍길동, A사업", height=250)
+                    
+                    if st.button("일괄 등록 실행"):
+                        if raw_input.strip():
+                            lines = raw_input.strip().split('\n')
+                            new_rows = []
+                            for line in lines:
+                                # 쉼표나 탭으로 구분된 데이터를 리스트로 변환
+                                parts = [p.strip() for p in line.replace('\t', ',').split(',')]
+                                if len(parts) >= 4:
+                                    new_rows.append({'법원': parts[0], '사건번호': parts[1], '관계자': parts[2], '사업명': parts[3]})
+                            
+                            if new_rows:
+                                st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame(new_rows)], ignore_index=True)
+                                st.session_state.df.to_excel(fname, index=False)
+                                st.success(f"{len(new_rows)}건 등록 성공!")
+                                st.rerun()
+                            else:
+                                st.error("형식이 맞지 않습니다.")
+
+                # --- 3. 등록 사건 현황 ---
+                with col_view:
+                    st.subheader("📂 등록현황")
                     pj_list = st.session_state.df['사업명'].unique().tolist() if not st.session_state.df.empty else []
-                    sel_pj = st.selectbox("사업명 선택", ["전체"] + pj_list) # 전체 보기 옵션 추가 권장
-                    
-                    st_df = st.session_state.df
+                    sel_pj = st.selectbox("사업명 필터", ["전체"] + pj_list)                    
+                    # 전체 데이터 가져오기
+                    full_df = st.session_state.df.copy()                    
+                    # 1. 화면에 표시할 데이터 준비
                     if sel_pj != "전체":
-                        st_df = st_df[st_df['사업명'] == sel_pj]
+                        display_df = full_df[full_df['사업명'] == sel_pj]
+                    else:
+                        display_df = full_df                
+                    # 2. 데이터 에디터 (st_df = ... 형태의 대입문 삭제)
+                    edit_df = st.data_editor(
+                        display_df,
+                        num_rows="dynamic",
+                        use_container_width=True,
+                        key="main_db_editor",
+                        height=400)
                     
-                    st.dataframe(st_df, height=400, use_container_width=True)
+                    if st.button("💾 모든 변경사항 최종 저장"):
+                        st.session_state.df = edit_df
+                        st.session_state.df.to_excel(fname, index=False)
+                        st.success("엑셀 파일이 성공적으로 업데이트되었습니다.")
+                        st.rerun()
                     
-                    
-
-
         if start_btn and input_text:
             try:
                 #lines = [line.split() for line in input_text.strip().split("\n") if line.strip()]
