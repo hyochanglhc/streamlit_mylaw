@@ -99,6 +99,7 @@ class CourtAutomation:
     def quit(self):
         self.driver.quit()
         
+        
 # ==================== 파싱 함수들 ====================
 def parse_litigation(soup, row):
     # 1. 기본 테이블 찾기
@@ -119,6 +120,7 @@ def parse_litigation(soup, row):
             parsed = [','.join(g[idx].get_text(strip=True) for g in groups if len(g) > idx) for idx in range(5)]
             if parsed[0].strip():
                 date_info = parsed
+            
     # 데이터 병합 및 가공
     res.update({
         '법원': row.get('법원', ''),
@@ -134,11 +136,23 @@ def parse_litigation(soup, row):
     res['원고수'] = int(match.group(1)) + 1 if match else 1
     #res['소송규모'] = '집단' if res['원고수'] > 5 else '개인'
     #res['판결여부'] = '판결' if res.get('종국결과') else '진행중'    
+    
+    #최근제출서류
+    #grd: grid의 약자로 추정하여, [id$="rcntSbmsnDocmtLst_cell_3_1"] >>> #(id)가 ""로 끝나는 element선택
+    #mf_ssgoTopMainTab_contents_content1_body_wfSsgoDetail_ssgoCsDetailTab_contents_ssgoTab1_body_wfRcntSbmsnDocmtLst_grd_rcntSbmsnDocmtLst_cell_3_1
+    try:
+        #mf_ssgoTopMainTab_contents_content1_body_wfSsgoDetail_ssgoCsDetailTab_contents_ssgoTab1_body_wfRcntSbmsnDocmtLst_grd_rcntSbmsnDocmtLst_body_table
+        tbl2 = soup.find('table', id=lambda x: x and 'rcntSbmsnDocmtLst_body_table' in x)
+        res['최근제출서류'] = tbl2.find_all('td')[-1].text     
+    except:
+        res['최근제출서류'] =""
+    
+    
     # 기일 관련 추가 계산
     dates = res['기일일자']
-    has_date = dates and dates != "기일미지정"
+    has_date = dates and dates != "기일미지정" # dates 유효하고, 특정 조건(기일미지정)이 아닌 경우를 체크하는 논리 연산
     res['기일차수'] = len(set(dates.split(','))) if has_date else 0 #split을 set으로 하면 중복값제외됨.
-    res['최종일자'] = dates.split(',')[-1].strip() if has_date else "기일미지정"    
+    res['최종일자'] = dates.split(',')[-1].strip() if has_date else "기일미지정"        
     return res
 
 def parse_nego(soup, row):    
@@ -172,8 +186,8 @@ def parse_nego(soup, row):
     plaintiff = res.get('원고', '')
     match = re.search(r'외\s*(\d+)명', plaintiff)
     res['원고수'] = int(match.group(1)) + 1 if match else 1
-    res['소송규모'] = '집단' if res['원고수'] > 5 else '개인'
-    res['판결여부'] = '판결' if res.get('종국결과') else '진행중'    
+    #res['소송규모'] = '집단' if res['원고수'] > 5 else '개인'
+    #res['판결여부'] = '판결' if res.get('종국결과') else '진행중'    
     # 기일 관련 추가 계산
     dates = res['기일일자']
     has_date = dates and dates != "기일미지정"
@@ -203,46 +217,44 @@ def parse_preattach(soup, row):
     """가압류가처분(카단) 전용 파싱"""
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
     if not tbl: return None
-# =============================================================================
-#     tds = [td.get_text(strip=True) for td in tbl.find_all('td')]    
-# =============================================================================
+    #tds = [td.get_text(strip=True) for td in tbl.find_all('td')]    
     tbl_map = {th.get_text(strip=True): td.get_text(strip=True)                
-                for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}     
-    tbl_map.update({
-        '법원': row.get('법원', ''),
-        '관계자': row.get('관계자', ''),        
-    })
+                for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}         
     tbl_map['사건번호'] = tbl_map['사건번호'].split('[')[0]
     tbl_map['사건명'] = tbl_map['사건명'].replace('[전자]',"")
+    tbl_map.update({
+        '법원': row.get('법원', ''),
+        '관계자': row.get('관계자', ''),})    
+    return tbl_map
+    
+def parse_payment_order(soup, row):
+    tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
+    if not tbl: return None
+    #tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
+    tbl_map = {th.get_text(strip=True): td.get_text(strip=True)                
+                for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}         
+    tbl_map['사건번호'] = tbl_map['사건번호'].split('[')[0]
+    tbl_map['사건명'] = tbl_map['사건명'].replace('[전자]',"")
+    tbl_map.update({
+        '법원': row.get('법원', ''),
+        '관계자': row.get('관계자', ''),})            
+    try:
+        tbl1 = soup.find('table', id=lambda x: x and 'reltCsCtt_body_table' in x)
+        tbl_map['관련사건'] = tbl1.find_all('td')[1].text     
+    except:
+        tbl_map['관련사건'] =""
+    
     
     return tbl_map
     
 # =============================================================================
 #     return {
-#         '법원': row['법원'], 
-#         '사건번호': tds[0].split('[')[0] if len(tds) > 0 else "",
-#         '관계자': row['관계자'],
-#         '사건명': tds[1] if len(tds) > 1 else "",
-#         '채권자': tds[2] if len(tds) > 2 else "",
-#         '채무자': tds[3] if len(tds) > 3 else "",
-#         '청구금액': tds[5] if len(tds) > 5 else "",
-#         '접수일': tds[8] if len(tds) > 8 else "",
-#         '종국결과': tds[9] if len(tds) > 9 else "",
-#         '결정문송달일': tds[19] if len(tds) > 19 else ""
-#     }
+#         '법원': row.get('법원', ''), '사건번호': tds[0], '관계자': row.get('관계자', ''),
+#         '사건명': tds[1].replace("[전자]",""),
+#         '채권자': tds[2], '채무자': tds[3], '접수일': tds[5], '종국결과': tds[6],
+#         '청구금액': tds[7], '확정일': tds[14].replace(".","-") if len(tds) > 14 else ""}
 # =============================================================================
 
-
-
-def parse_payment_order(soup, row):
-    tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
-    if not tbl: return None
-    tds = [td.get_text(strip=True) for td in tbl.find_all('td')]
-    return {
-        '법원사건번호': row['법원'] + tds[0], '사건명': tds[1].replace("[전자]",""),
-        '채권자': tds[2], '채무자': tds[3], '접수일': tds[5], '종국결과': tds[6],
-        '청구금액': tds[7], '확정일': tds[14].replace(".","-") if len(tds) > 14 else ""
-    }
 
 def parse_property(driver, soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
@@ -257,68 +269,191 @@ def parse_property(driver, soup, row):
     except: last_prog = None
     
     return {
-        '사건번호': row['법원'] + tds[0].split('[')[0], '사건명': tds[1],
+        '법원': row.get('법원', ''), '사건번호': tds[0], '관계자': row.get('관계자', ''),
+        '사건명': tds[1],
         '채권자': tds[2], '채무자': tds[3], '접수일': tds[8].replace(".","-") if len(tds) > 8 else tds[5],
         '일자': last_prog[0].get_text(strip=True) if last_prog else "",
         '진행경과': last_prog[1].get_text(strip=True) if last_prog else ""
     }
 
 
+
+# =========execl and load_data===================================
 def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
         df.to_excel(writer, index=False)
     return output.getvalue()
 
+
+def load_data(file_path):
+    if Path(file_path).exists():
+        return pd.read_excel(file_path)
+    return pd.DataFrame(columns=['법원', '사건번호', '관계자', '사업명'])
+
+
+
+
+
+
+
 # ==================== Streamlit 메인 앱 ====================
 def main():
     st.set_page_config(page_title="나의사건조회", layout="wide")
+    st.subheader("⚖️ 나의 사건 현황 조회")
     
-    # 세션 초기화
-    if 'final_results' not in st.session_state: st.session_state.final_results = None
-    if 'is_running' not in st.session_state: st.session_state.is_running = False
-    if 'stop_requested' not in st.session_state: st.session_state.stop_requested = False
+    # 파일 경로 설정
+    current_dir = Path(__file__).parent.absolute()
+    fname = current_dir / 'data_sosong.xlsx'
+    
+    # 2. 세션 상태 초기화
+    if 'df' not in st.session_state:
+        st.session_state.df = load_data(fname)
+    if 'is_running' not in st.session_state:
+        st.session_state.is_running = False
+    if 'stop_requested' not in st.session_state:
+        st.session_state.stop_requested = False
+    if 'final_results' not in st.session_state:
+        st.session_state.final_results = None
 
-    st.markdown("""<style>
-                div[class*="stRadio"] label p { font-size: 18px !important; font-weight: bold; color: #1E90FF; }
-                .stButton>button { width: 100%; font-weight: bold; }
-                </style>""", unsafe_allow_html=True)
+    # 3. CSS 스타일 (탭 간격 및 폰트 개선)
+    st.markdown("""
+        <style>
+        /* 탭 사이의 간격 및 폰트 설정 */
+        div[data-testid="stTabs"] {
+            gap: 400px; /* 탭 사이 간격을 충분히 확보 */
+        }
+        div[data-testid="stTabs"] button [data-testid="stMarkdownContainer"] p {
+            font-size: 18px !important; /* 탭 글자 크기 확장 */
+            font-weight: bold;
+        }
+        /* 라디오 버튼 스타일 */
+        div[class*="stRadio"] label p { 
+            font-size: 18px !important; 
+            font-weight: bold; 
+            color: #1E90FF; 
+        }
+        /* 공통 버튼 스타일 */
+        .stButton>button { 
+            width: 100%; 
+            font-weight: bold; 
+            margin-top: 5px;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
+    # 4. 사이드바 메뉴
     with st.sidebar:
-        selected = option_menu("메인 메뉴", ["홈", "소송현황조회"], icons=['house', 'search'], default_index=1)
+        selected = option_menu(
+            "메인 메뉴", ["홈", "소송현황조회"], 
+            icons=['house', 'search'], 
+            default_index=1
+        )
 
-    if selected == "소송현황조회":
-        st.subheader("⚖️ 나의 사건 현황 조회")
-        
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.markdown(""":red[사건정보입력(관할법원  사건번호  관계사) 3개의 정보를 tab으로 구분(엑셀3칸으로)하여 붙여넣으세요]""")            
-            input_text = st.text_area(
-                "사건정보입력", # 스크린 리더용 라벨
-                height=200, placeholder="서울중앙지방법원\t2024가단12345\t홍길동",
-                label_visibility="collapsed" # 실제 라벨은 보이지 않게 처리
+    # --- 페이지 분기 ---
+    if selected == "홈":
+        st.subheader("🏠 나의사건조회 시스템")
+        st.write("대법원 나의사건조회 서비스를 자동화하여 다량의 사건 현황을 한 번에 파악할 수 있게 도와줍니다.")
+
+    elif selected == "소송현황조회":
+        # 메인 탭 구성
+        tab1, tab2 = st.tabs(['🔍소송조회', '➕사건등록/관리'])
+
+        # ---------------------------------------------------------
+        # Tab 1: 소송 조회 (자동화 기능)
+        # ---------------------------------------------------------
+        with tab1:                               
+            col1, col2, col3 = st.columns([4.5,1,4.5])
+            
+            with col1:
+                st.markdown("**:red[사건정보입력(법원, 사건번호, 관계사)을 Tab으로 구분하여 붙여넣으세요]**")
+                input_text = st.text_area(
+                    "사건입력창",
+                    height=200, 
+                    placeholder="서울중앙지방법원\t2024가단12345\t홍길동",
+                    label_visibility="collapsed"
                 )
-            
-            mode_choice = st.radio("조회 방식 선택", ["소송조회(사건번호분류)", "일자별 진행상세 조회"], horizontal=True)
+                
+                mode_choice = st.radio("조회 방식 선택", ["소송조회(사건번호분류)", "일자별 진행상세 조회"], horizontal=True)
+                
+                c1, c2 = st.columns(2)
+                with c1:
+                    start_btn = st.button("조회 시작 🚀", disabled=st.session_state.is_running)
+                with c2:
+                    if st.button("🧹 결과 초기화"):
+                        st.session_state.final_results = None
+                        st.session_state.is_running = False
+                        st.rerun()
 
-            c1, c2 = st.columns([1, 1])
-            with c1: start_btn = st.button("조회 시작 🚀", disabled=st.session_state.is_running)
+            with col3:
+                with st.expander("사건DB"):
+                    st.info("💡 현재 등록된 사건 DB 리스트")
+                    # 등록된 데이터가 있을 경우만 필터 제공
+                    pj_list = st.session_state.df['사업명'].unique().tolist() if not st.session_state.df.empty else []
+                    pj_filter = st.selectbox("등록된 사업명으로 필터링", pj_list)
+                    
+                    st_df = st.session_state.df
+                    st_df = st_df[st_df['사업명'] == pj_filter]
+                    
+                    st.dataframe(st_df[['법원', '사건번호', '관계자']], use_container_width=True, height=250, hide_index=True)
+                    st.metric(label="건수", value=len(st_df))
+                       
+
+        # ---------------------------------------------------------
+        # Tab 2: 사건 등록 및 관리
+        # ---------------------------------------------------------
+        with tab2:
+            col_reg, col_edit = st.columns([1, 2])
             
-            with c2:
-                if st.button("🧹 결과 초기화"):
-                    st.session_state.final_results = None
-                    # 실행 상태를 False로 변경하여 버튼 비활성화를 해제합니다.
-                    st.session_state.is_running = False 
-                    # 중지 요청 상태도 초기화해주는 것이 안전합니다.
-                    st.session_state.stop_requested = False 
-                    st.rerun()
+            with col_reg:
+                st.subheader('📝 신규 사건 등록')
+                with st.form(key='entry_form', clear_on_submit=True):
+                    court = st.text_input("법원", placeholder="예: 서울중앙지방법원")
+                    number = st.text_input("사건번호", placeholder="예: 2024가단12345")
+                    rel_person = st.text_input("관계자")
+                    pj_name = st.text_input("사업명")
+                    submit_button = st.form_submit_button(label="사건 등록")
+            
+                if submit_button:
+                    if court and number and rel_person:
+                        new_data = {'법원': court, '사건번호': number, '관계자': rel_person, '사업명': pj_name}
+                        st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
+                        st.session_state.df.to_excel(fname, index=False)
+                        st.success("새 사건이 성공적으로 등록되었습니다!")
+                        st.rerun()
+                    else:
+                        st.warning("필수 항목(법원, 사건번호, 관계자)을 모두 입력해주세요.")
+
+            with col_edit:
+                st.subheader("📂 등록사건현황")
+                pj_list = st.session_state.df['사업명'].unique().tolist() if not st.session_state.df.empty else []
+                sel_pj = st.selectbox("사업명선택", pj_list)
+                
+                st_df = st.session_state.df
+                st_df = st_df[st_df['사업명'] == sel_pj]
+                st.dataframe(st_df, height=330)
+                
+# =============================================================================
+#                 st.caption("표에서 직접 수정 후 '최종 저장' 버튼을 누르세요. 행 선택 후 Delete 키로 삭제 가능합니다.")                
+#                 edit_df = st.data_editor(
+#                     st_df,
+#                     num_rows="dynamic",
+#                     use_container_width=True,
+#                     key="main_db_editor")
+#                 
+#                 if st.button("💾 모든 변경사항 최종 저장"):
+#                     st.session_state.df = edit_df
+#                     st.session_state.df.to_excel(fname, index=False)
+#                     st.success("엑셀 파일이 성공적으로 업데이트되었습니다.")
+#                     st.rerun()
+# =============================================================================
 
         if start_btn and input_text:
             try:
                 #lines = [line.split() for line in input_text.strip().split("\n") if line.strip()]
-                lines = [re.split(r'\s+', line.strip()) for line in input_text.strip().split("\n") if line.strip()]
+                lines = [re.split(r'\t+', line.strip()) for line in input_text.strip().split("\n") if line.strip()]
                 df = pd.DataFrame(lines, columns=['법원', '사건번호', '관계자'])
-                extracted = df['사건번호'].str.extract(r'^(\d{4})\s*([^\d\s]+)\s*(\d+)$')
+                extracted = df['사건번호'].str.extract(r'^(\d{4})\s*([^\d\s]+)\s*(\d+)$')                
                 df['연도'], df['구분'], df['번호'] = extracted[0], extracted[1], extracted[2]
                 df = df.dropna(subset=['연도', '구분', '번호'])
             except:
