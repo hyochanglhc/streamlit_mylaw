@@ -300,8 +300,7 @@ def load_data(file_path):
 # ==================== Streamlit 메인 앱 ====================
 def main():
     st.set_page_config(page_title="나의사건조회", layout="wide")
-    st.subheader("⚖️ 나의 사건 현황 조회")
-    
+    st.subheader("⚖️ 나의 사건 현황 조회")    
     # 파일 경로 설정
     current_dir = Path(__file__).parent.absolute()
     fname = current_dir / 'data_sosong.xlsx'
@@ -318,11 +317,7 @@ def main():
 
     # 3. CSS 스타일 (탭 간격 및 폰트 개선)
     st.markdown("""
-        <style>
-        /* 탭 사이의 간격 및 폰트 설정 */
-        div[data-testid="stTabs"] {
-            gap: 400px; /* 탭 사이 간격을 충분히 확보 */
-        }
+        <style>        
         div[data-testid="stTabs"] button [data-testid="stMarkdownContainer"] p {
             font-size: 18px !important; /* 탭 글자 크기 확장 */
             font-weight: bold;
@@ -358,10 +353,6 @@ def main():
     elif selected == "소송현황조회":
         # 메인 탭 구성
         tab1, tab2 = st.tabs(['🔍소송조회', '➕사건등록/관리'])
-
-        # ---------------------------------------------------------
-        # Tab 1: 소송 조회 (자동화 기능)
-        # ---------------------------------------------------------
         with tab1:                               
             col1, col2, col3 = st.columns([4.5,1,4.5])
             
@@ -385,68 +376,77 @@ def main():
                         st.session_state.is_running = False
                         st.rerun()
 
-            with col3:
-                with st.expander("사건DB"):
-                    st.info("💡 현재 등록된 사건 DB 리스트")
-                    # 등록된 데이터가 있을 경우만 필터 제공
+# =============================================================================
+#             with col3:
+#                 with st.expander("사건DB"):
+#                     st.info("💡 현재 등록된 사건 DB 리스트")
+#                     # 등록된 데이터가 있을 경우만 필터 제공
+#                     pj_list = st.session_state.df['사업명'].unique().tolist() if not st.session_state.df.empty else []
+#                     pj_filter = st.selectbox("등록된 사업명으로 필터링", pj_list)
+#                     
+#                     st_df = st.session_state.df
+#                     st_df = st_df[st_df['사업명'] == pj_filter]
+#                     
+#                     st.dataframe(st_df[['법원', '사건번호', '관계자']], use_container_width=True, height=250, hide_index=True)
+#                     st.metric(label="건수", value=len(st_df))
+# =============================================================================
+
+        with tab2: # 사건등록관리
+            # 1. 세션 상태 초기화
+            if 'authenticated' not in st.session_state:
+                st.session_state.authenticated = False        
+            # 2. 인증되지 않은 경우: 로그인 화면 표시
+            if not st.session_state.authenticated:
+                st.subheader("🔒 보안구역")
+                password = st.text_input("액세스 비밀번호를 입력하세요", type="password")                
+                if st.button("접속하기"):
+                    if password == "7840":
+                        st.session_state.authenticated = True
+                        st.rerun()  # 성공 시 재실행하여 아래 'else' 구간으로 진입
+                    else:
+                        st.error("비밀번호가 올바르지 않습니다.")
+        
+            # 3. 인증된 경우: 메인 사건 등록/현황 화면 표시
+            else:
+                # 상단에 로그아웃 버튼 배치
+                if st.button("사건관리 로그아웃"): # 사이드바 혹은 상단에 배치
+                    st.session_state.authenticated = False
+                    st.rerun()
+        
+                col_reg, col_edit = st.columns([1, 2])            
+                
+                with col_reg:
+                    st.subheader('📝 신규 사건 등록')
+                    with st.form(key='entry_form', clear_on_submit=True):
+                        court = st.text_input("법원", placeholder="예: 서울중앙지방법원")
+                        number = st.text_input("사건번호", placeholder="예: 2024가단12345")
+                        rel_person = st.text_input("관계자")
+                        pj_name = st.text_input("사업명")
+                        submit_button = st.form_submit_button(label="사건 등록")
+                        
+                    if submit_button:
+                        if court and number and rel_person:
+                            new_data = {'법원': court, '사건번호': number, '관계자': rel_person, '사업명': pj_name}
+                            st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
+                            st.session_state.df.to_excel(fname, index=False)
+                            st.success("새 사건이 성공적으로 등록되었습니다!")
+                            st.rerun()
+                        else:
+                            st.warning("필수 항목(법원, 사건번호, 관계자)을 모두 입력해주세요.")
+                
+                with col_edit:
+                    st.subheader("📂 등록사건현황")
                     pj_list = st.session_state.df['사업명'].unique().tolist() if not st.session_state.df.empty else []
-                    pj_filter = st.selectbox("등록된 사업명으로 필터링", pj_list)
+                    sel_pj = st.selectbox("사업명 선택", ["전체"] + pj_list) # 전체 보기 옵션 추가 권장
                     
                     st_df = st.session_state.df
-                    st_df = st_df[st_df['사업명'] == pj_filter]
+                    if sel_pj != "전체":
+                        st_df = st_df[st_df['사업명'] == sel_pj]
                     
-                    st.dataframe(st_df[['법원', '사건번호', '관계자']], use_container_width=True, height=250, hide_index=True)
-                    st.metric(label="건수", value=len(st_df))
-                       
+                    st.dataframe(st_df, height=400, use_container_width=True)
+                    
+                    
 
-        # ---------------------------------------------------------
-        # Tab 2: 사건 등록 및 관리
-        # ---------------------------------------------------------
-        with tab2:
-            col_reg, col_edit = st.columns([1, 2])
-            
-            with col_reg:
-                st.subheader('📝 신규 사건 등록')
-                with st.form(key='entry_form', clear_on_submit=True):
-                    court = st.text_input("법원", placeholder="예: 서울중앙지방법원")
-                    number = st.text_input("사건번호", placeholder="예: 2024가단12345")
-                    rel_person = st.text_input("관계자")
-                    pj_name = st.text_input("사업명")
-                    submit_button = st.form_submit_button(label="사건 등록")
-            
-                if submit_button:
-                    if court and number and rel_person:
-                        new_data = {'법원': court, '사건번호': number, '관계자': rel_person, '사업명': pj_name}
-                        st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_data])], ignore_index=True)
-                        st.session_state.df.to_excel(fname, index=False)
-                        st.success("새 사건이 성공적으로 등록되었습니다!")
-                        st.rerun()
-                    else:
-                        st.warning("필수 항목(법원, 사건번호, 관계자)을 모두 입력해주세요.")
-
-            with col_edit:
-                st.subheader("📂 등록사건현황")
-                pj_list = st.session_state.df['사업명'].unique().tolist() if not st.session_state.df.empty else []
-                sel_pj = st.selectbox("사업명선택", pj_list)
-                
-                st_df = st.session_state.df
-                st_df = st_df[st_df['사업명'] == sel_pj]
-                st.dataframe(st_df, height=330)
-                
-# =============================================================================
-#                 st.caption("표에서 직접 수정 후 '최종 저장' 버튼을 누르세요. 행 선택 후 Delete 키로 삭제 가능합니다.")                
-#                 edit_df = st.data_editor(
-#                     st_df,
-#                     num_rows="dynamic",
-#                     use_container_width=True,
-#                     key="main_db_editor")
-#                 
-#                 if st.button("💾 모든 변경사항 최종 저장"):
-#                     st.session_state.df = edit_df
-#                     st.session_state.df.to_excel(fname, index=False)
-#                     st.success("엑셀 파일이 성공적으로 업데이트되었습니다.")
-#                     st.rerun()
-# =============================================================================
 
         if start_btn and input_text:
             try:
@@ -517,13 +517,6 @@ def main():
                         res_df = pd.DataFrame(results_dict[mode_name])
                         cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]                        
                         res_df = res_df[cols]                        
-# =============================================================================
-#                         if '기일일자' in res_df.columns and not res_df.empty:                            
-#                             last_date = res_df['기일일자'].iloc[-1].split(",")[-1]
-#                             res_df['최종일자'] = last_date
-#                         else:                            
-#                             pass
-# =============================================================================
                         st.dataframe(res_df, use_container_width=True, hide_index=True)
                         
                         excel_data = to_excel(res_df)
@@ -543,7 +536,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
