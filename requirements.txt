@@ -6,4 +6,5 @@ pytesseract
 numpy
 beautifulsoup4
 selenium
+openpyxl
 xlsxwriter
