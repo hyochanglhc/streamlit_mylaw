@@ -155,6 +155,7 @@ def parse_litigation(soup, row):
     res['최종일자'] = dates.split(',')[-1].strip() if has_date else "기일미지정"        
     return res
 
+
 def parse_nego(soup, row):    
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
     if not tbl:
@@ -196,20 +197,21 @@ def parse_nego(soup, row):
     return res
 
 
-
-def parse_detail(driver, row):
+def parse_detail(driver, row):    
     try:
+        #driver.find_element(By.CSS_SELECTOR, '[id$=ssgoTab2_tabHTML]').click()
         driver.find_element(By.CSS_SELECTOR, '#mf_ssgoTopMainTab_contents_content1_body_wfSsgoDetail_ssgoCsDetailTab_tab_ssgoTab2_tabHTML').click()
-        time.sleep(1)
-        soup = bs(driver.page_source, "html.parser")
-        tbody = soup.find('tbody', id=lambda x: x and 'grd_csProgLst_body_tbody' in x)
-        rows_data = []
+        time.sleep(1)         
+        
+        soup = bs(driver.page_source, "html.parser")            
+        tbody = soup.find('tbody', id='mf_ssgoTopMainTab_contents_content1_body_wfSsgoDetail_ssgoCsDetailTab_contents_ssgoTab2_body_grd_csProgLst_body_tbody')        
+        res = []
         if tbody:
             for tr in tbody.find_all('tr', class_='grid_body_row'):
                 cells = tr.find_all('td')
                 if len(cells) >= 2:
-                    rows_data.append({'법원': row['법원'], '사건번호': row['사건번호'], '일자': cells[0].get_text(strip=True), '내용': cells[1].get_text(strip=True)})
-        return rows_data
+                    res.append({'법원': row['법원'], '사건번호': row['사건번호'], '관계자': row['관계자'], '일자': cells[0].get_text(strip=True), '내용': cells[1].get_text(strip=True)})
+        return res
     except: return []
 
 
@@ -226,6 +228,7 @@ def parse_preattach(soup, row):
         '법원': row.get('법원', ''),
         '관계자': row.get('관계자', ''),})    
     return tbl_map
+
     
 def parse_payment_order(soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
@@ -246,16 +249,8 @@ def parse_payment_order(soup, row):
     
     
     return tbl_map
+
     
-# =============================================================================
-#     return {
-#         '법원': row.get('법원', ''), '사건번호': tds[0], '관계자': row.get('관계자', ''),
-#         '사건명': tds[1].replace("[전자]",""),
-#         '채권자': tds[2], '채무자': tds[3], '접수일': tds[5], '종국결과': tds[6],
-#         '청구금액': tds[7], '확정일': tds[14].replace(".","-") if len(tds) > 14 else ""}
-# =============================================================================
-
-
 def parse_property(driver, soup, row):
     tbl = soup.find('table', id=lambda x: x and 'ssgoCsDetailTab' in x)
     if not tbl: return None
@@ -375,21 +370,88 @@ def main():
                         st.session_state.final_results = None
                         st.session_state.is_running = False
                         st.rerun()
+            
+            if start_btn and input_text:
+                try:
+                    #lines = [line.split() for line in input_text.strip().split("\n") if line.strip()]
+                    lines = [re.split(r'\t+', line.strip()) for line in input_text.strip().split("\n") if line.strip()]
+                    df = pd.DataFrame(lines, columns=['법원', '사건번호', '관계자'])
+                    extracted = df['사건번호'].str.extract(r'^(\d{4})\s*([^\d\s]+)\s*(\d+)$')                
+                    df['연도'], df['구분'], df['번호'] = extracted[0], extracted[1], extracted[2]
+                    df = df.dropna(subset=['연도', '구분', '번호'])
+                except:
+                    st.error("데이터 파싱 실패. 형식을 확인하세요.")
+                    return
 
-# =============================================================================
-#             with col3:
-#                 with st.expander("사건DB"):
-#                     st.info("💡 현재 등록된 사건 DB 리스트")
-#                     # 등록된 데이터가 있을 경우만 필터 제공
-#                     pj_list = st.session_state.df['사업명'].unique().tolist() if not st.session_state.df.empty else []
-#                     pj_filter = st.selectbox("등록된 사업명으로 필터링", pj_list)
-#                     
-#                     st_df = st.session_state.df
-#                     st_df = st_df[st_df['사업명'] == pj_filter]
-#                     
-#                     st.dataframe(st_df[['법원', '사건번호', '관계자']], use_container_width=True, height=250, hide_index=True)
-#                     st.metric(label="건수", value=len(st_df))
-# =============================================================================
+                st.session_state.is_running = True
+                st.session_state.stop_requested = False
+                
+                # [수정] "가압류가처분" 키 추가
+                results_dict = {"소송": [], "지급명령": [], "재산명시": [], "조정": [], "가압류가처분": [], "진행상세": []}
+                
+                bot = CourtAutomation()
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                for i, row in df.iterrows():
+                    if st.session_state.stop_requested: break
+                    
+                    if "소송조회(사건번호분류)" in mode_choice:
+                        case_type = str(row['구분']).strip()
+                        if case_type == '카명': mode = "재산명시"
+                        elif case_type == '차전': mode = "지급명령"
+                        elif case_type in ['머', '조정']: mode = "조정"
+                        elif case_type in ['카단','카합']: mode = "가압류가처분"  # [수정] 모드 할당
+                        else: mode = "소송"
+                    else:
+                        mode = "진행상세"
+
+                    status_text.info(f"[{i+1}/{len(df)}] {row['사건번호']} 조회 중... ({mode})")
+                    bot.navigate_to_search(row)
+                    soup = bot.solve_captcha()
+                    
+                    if soup:
+                        #if mode == "소송": data = parse_litigation(soup, row)
+                        if mode in "소송": data = parse_litigation(soup, row)
+                        elif mode == "가압류가처분": data = parse_preattach(soup, row)
+                        elif mode == "진행상세": data = parse_detail(bot.driver, row)
+                        elif mode == "지급명령": data = parse_payment_order(soup, row)
+                        elif mode == "조정": data = parse_nego(soup, row)
+                        elif mode == "재산명시": data = parse_property(bot.driver, soup, row)
+
+                        if data:
+                            if isinstance(data, list): results_dict[mode].extend(data)
+                            else: results_dict[mode].append(data)
+                    
+                    progress_bar.progress((i + 1) / len(df))
+
+                bot.quit()
+                # 조회가 모두 끝났으므로 버튼을 다시 활성화합니다.
+                st.session_state.is_running = False
+                st.markdown("---")
+                #dictionary.items() 함수는 모든 키(Key)와 값(Value)의 쌍을 튜플(Tuple) 형태로 묶어서 반환
+                
+                active_modes = [m for m, res in results_dict.items() if res]
+                
+                if active_modes:
+                    tabs = st.tabs(active_modes)
+                    for idx, mode_name in enumerate(active_modes):
+                        with tabs[idx]:
+                            res_df = pd.DataFrame(results_dict[mode_name])
+                            cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]                        
+                            res_df = res_df[cols]                        
+                            st.dataframe(res_df, use_container_width=True, hide_index=True)
+                            
+                            excel_data = to_excel(res_df)
+                            st.download_button(
+                                label=f"📥 {mode_name} 결과 엑셀 다운로드",
+                                data=excel_data,
+                                file_name=f"{mode_name}_{datetime.now().strftime('%y%m%d_%H%M')}.xlsx",
+                                mime="application/vnd.ms-excel",
+                                key=f"dl_{mode_name}"
+                            )
+                else:
+                    st.warning("조회된 결과가 없습니다.")    
 
         with tab2: # 사건등록관리
             # 1. 세션 상태 초기화
@@ -484,91 +546,9 @@ def main():
                         st.success("엑셀 파일이 성공적으로 업데이트되었습니다.")
                         st.rerun()
                     
-        if start_btn and input_text:
-            try:
-                #lines = [line.split() for line in input_text.strip().split("\n") if line.strip()]
-                lines = [re.split(r'\t+', line.strip()) for line in input_text.strip().split("\n") if line.strip()]
-                df = pd.DataFrame(lines, columns=['법원', '사건번호', '관계자'])
-                extracted = df['사건번호'].str.extract(r'^(\d{4})\s*([^\d\s]+)\s*(\d+)$')                
-                df['연도'], df['구분'], df['번호'] = extracted[0], extracted[1], extracted[2]
-                df = df.dropna(subset=['연도', '구분', '번호'])
-            except:
-                st.error("데이터 파싱 실패. 형식을 확인하세요.")
-                return
-
-            st.session_state.is_running = True
-            st.session_state.stop_requested = False
-            
-            # [수정] "가압류가처분" 키 추가
-            results_dict = {"소송": [], "지급명령": [], "재산명시": [], "조정": [], "가압류가처분": [], "진행상세": []}
-            
-            bot = CourtAutomation()
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-
-            for i, row in df.iterrows():
-                if st.session_state.stop_requested: break
-                
-                if "소송조회(사건번호분류)" in mode_choice:
-                    case_type = str(row['구분']).strip()
-                    if case_type == '카명': mode = "재산명시"
-                    elif case_type == '차전': mode = "지급명령"
-                    elif case_type in ['머', '조정']: mode = "조정"
-                    elif case_type in ['카단','카합']: mode = "가압류가처분"  # [수정] 모드 할당
-                    else: mode = "소송"
-                else:
-                    mode = "진행상세"
-
-                status_text.info(f"[{i+1}/{len(df)}] {row['사건번호']} 조회 중... ({mode})")
-                bot.navigate_to_search(row)
-                soup = bot.solve_captcha()
-                
-                if soup:
-                    #if mode == "소송": data = parse_litigation(soup, row)
-                    if mode in "소송": data = parse_litigation(soup, row)
-                    elif mode == "가압류가처분": data = parse_preattach(soup, row)
-                    elif mode == "진행상세": data = parse_detail(bot.driver, row)
-                    elif mode == "지급명령": data = parse_payment_order(soup, row)
-                    elif mode == "조정": data = parse_nego(soup, row)
-                    elif mode == "재산명시": data = parse_property(bot.driver, soup, row)
-
-                    if data:
-                        if isinstance(data, list): results_dict[mode].extend(data)
-                        else: results_dict[mode].append(data)
-                
-                progress_bar.progress((i + 1) / len(df))
-
-            bot.quit()
-            # 조회가 모두 끝났으므로 버튼을 다시 활성화합니다.
-            st.session_state.is_running = False
-            st.markdown("---")
-            #dictionary.items() 함수는 모든 키(Key)와 값(Value)의 쌍을 튜플(Tuple) 형태로 묶어서 반환
-            
-            active_modes = [m for m, res in results_dict.items() if res]
-            
-            if active_modes:
-                tabs = st.tabs(active_modes)
-                for idx, mode_name in enumerate(active_modes):
-                    with tabs[idx]:
-                        res_df = pd.DataFrame(results_dict[mode_name])
-                        cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]                        
-                        res_df = res_df[cols]                        
-                        st.dataframe(res_df, use_container_width=True, hide_index=True)
-                        
-                        excel_data = to_excel(res_df)
-                        st.download_button(
-                            label=f"📥 {mode_name} 결과 엑셀 다운로드",
-                            data=excel_data,
-                            file_name=f"{mode_name}_{datetime.now().strftime('%y%m%d_%H%M')}.xlsx",
-                            mime="application/vnd.ms-excel",
-                            key=f"dl_{mode_name}"
-                        )
-            else:
-                st.warning("조회된 결과가 없습니다.")
-
-    elif selected == "홈":
-        st.subheader("🏠 나의사건조회 ")
-        st.write("대법원 나의사건조회 서비스를 자동화하여 다량의 사건 현황을 한 번에 파악할 수 있게 도와줍니다.")
+        
 
 if __name__ == "__main__":
     main()
+
+
