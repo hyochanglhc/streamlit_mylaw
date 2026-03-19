@@ -28,8 +28,9 @@ else:  # Linux (Streamlit Cloud)
 # ==================== CourtAutomation 클래스 ====================
 class CourtAutomation:
     def __init__(self):
-        self.driver = self._create_driver()
-        self.wait = WebDriverWait(self.driver, 10)
+        self.driver = self._create_driver()        
+        self.driver.set_page_load_timeout(30) 
+        self.wait = WebDriverWait(self.driver, 15)
 
     def _create_driver(self):
         options = Options()
@@ -37,6 +38,23 @@ class CourtAutomation:
         options.add_argument("--no-sandbox")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--disable-blink-features=AutomationControlled")
+        
+        # 추가: 실제 브라우저처럼 보이게 하는 설정
+        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        options.add_experimental_option("excludeSwitches", ["enable-automation"])
+        options.add_experimental_option('useAutomationExtension', False)
+        
+        driver = webdriver.Chrome(options=options)
+        
+        # 추가: 웹드라이버 감지 방지 스크립트 실행
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', {
+                  get: () => undefined
+                })
+            """
+        })
+        
         return webdriver.Chrome(options=options)
 
     def solve_captcha(self):
@@ -77,24 +95,28 @@ class CourtAutomation:
         return None
 
     def navigate_to_search(self, row):
-        self.driver.get("https://www.scourt.go.kr/portal/information/events/search/search.jsp")
-        self.wait.until(EC.frame_to_be_available_and_switch_to_it((By.CSS_SELECTOR, "#contants > iframe")))
-        
-        Select(self.wait.until(EC.presence_of_element_located((By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_cortCd")))).select_by_visible_text(row['법원'])
-        time.sleep(0.5)
-        Select(self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_csYr")).select_by_visible_text(str(row['연도']))
-        time.sleep(0.5)
-        Select(self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_csDvsCd")).select_by_visible_text(row['구분'])
-        time.sleep(0.5)        
-        serial = self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_ibx_csSerial")
-        serial.clear()
-        time.sleep(0.5)
-        serial.send_keys(str(row['번호']))
-        
-        name = self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_ibx_btprNm")
-        name.clear()
-        name.send_keys(row['관계자'])
-        time.sleep(0.1)
+        try:
+            self.driver.get("https://www.scourt.go.kr/portal/information/events/search/search.jsp")            
+            self.wait.until(EC.frame_to_be_available_and_switch_to_it((By.CSS_SELECTOR, "#contants > iframe")))
+            
+            Select(self.wait.until(EC.presence_of_element_located((By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_cortCd")))).select_by_visible_text(row['법원'])
+            time.sleep(0.5)
+            Select(self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_csYr")).select_by_visible_text(str(row['연도']))
+            time.sleep(0.5)
+            Select(self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_sbx_csDvsCd")).select_by_visible_text(row['구분'])
+            time.sleep(0.5)        
+            serial = self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_ibx_csSerial")
+            serial.clear()
+            time.sleep(0.5)
+            serial.send_keys(str(row['번호']))
+            
+            name = self.driver.find_element(By.ID, "mf_ssgoTopMainTab_contents_content1_body_ibx_btprNm")
+            name.clear()
+            name.send_keys(row['관계자'])
+            time.sleep(0.1)
+        except Exception as e:
+            st.error(f"페이지 접속 중 오류 발생: {e}")
+            return False
 
     def quit(self):
         self.driver.quit()
