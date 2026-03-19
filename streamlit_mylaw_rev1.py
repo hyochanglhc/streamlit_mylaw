@@ -132,7 +132,8 @@ def parse_litigation(soup, row):
     res = {th.get_text(strip=True): td.get_text(strip=True) 
            for th, td in zip(tbl.find_all('th'), tbl.find_all('td'))}
     
-    tbl_date = soup.find('table', id=lambda x: x and 'rcntDxdyLst' in x)
+    #tbl_date = soup.find('table', id=lambda x: x and 'rcntDxdyLst' in x)
+    tbl_date = soup.find('table', id=lambda x: x and 'wfRcntDxdyLst_grd_rcntDxdyLst_body_table' in x) #심급내용이 있을때 처리방안
     date_info = ["기일미지정"] + [""] * 4 # 기본값 설정
     if tbl_date:
         all_tds = tbl_date.find_all('td')
