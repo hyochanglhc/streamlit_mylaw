@@ -262,10 +262,11 @@ def parse_payment_order(soup, row):
     tbl_map['사건번호'] = tbl_map['사건번호'].split('[')[0]
     tbl_map['사건명'] = tbl_map['사건명'].replace('[전자]',"")
     tbl_map.update({
-        '법원': row.get('법원', ''),
+        #'법원': row.get('법원', ''),
         '관계자': row.get('관계자', ''),})            
     try:
         tbl1 = soup.find('table', id=lambda x: x and 'reltCsCtt_body_table' in x)
+        tbl_map['법원2'] = tbl1.find_all('td')[0].text     
         tbl_map['관련사건'] = tbl1.find_all('td')[1].text     
     except:
         tbl_map['관련사건'] =""
