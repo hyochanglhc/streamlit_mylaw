@@ -266,11 +266,25 @@ def parse_payment_order(soup, row):
         '관계자': row.get('관계자', ''),})            
     try:
         tbl1 = soup.find('table', id=lambda x: x and 'reltCsCtt_body_table' in x)
-        tbl_map['법원2'] = tbl1.find_all('td')[0].text     
-        tbl_map['관련사건'] = tbl1.find_all('td')[1].text     
-    except:
-        tbl_map['관련사건'] =""
-    
+        if tbl1:
+            tds = tbl1.find_all('td')            
+            # 데이터가 있는 모든 td를 리스트로 만들어 출력해보세요 (디버깅용)
+            # print([td.get_text(strip=True) for td in tds])             
+            if len(tds) > 0:
+                # strip=True를 추가하여 불필요한 공백 제거
+                tbl_map['법원2'] = tds[0].get_text(strip=True)            
+            if len(tds) > 1:
+                tbl_map['관련사건'] = tds[1].get_text(strip=True)
+            else:
+                tbl_map['관련사건'] = ""
+        else:
+            tbl_map['법원2'] = ""
+            tbl_map['관련사건'] = ""
+    except Exception as e:
+        # 에러 내용을 확인하기 위해 로그 출력
+        print(f"Error parsing tbl1: {e}")
+        tbl_map['법원2'] = ""
+        tbl_map['관련사건'] = ""    
     
     return tbl_map
 
