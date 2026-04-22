@@ -353,4 +353,88 @@ def main():
 
             # --- 결과 출력 영역 (세션 상태 데이터 기반) ---
             if st.session_state.all_results:
-                active_modes = [m for m, res in st.session_state.all
+                active_modes = [m for m, res in st.session_state.all_results.items() if res]
+                if active_modes:
+                    st.markdown("---")
+                    res_tabs = st.tabs(active_modes)
+                    for idx, mode_name in enumerate(active_modes):
+                        with res_tabs[idx]:
+                            res_df = pd.DataFrame(st.session_state.all_results[mode_name])
+                            # 컬럼 순서 조정
+                            cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]                        
+                            res_df = res_df[cols]                        
+                            st.dataframe(res_df, use_container_width=True, hide_index=True)
+                            
+                            excel_data = to_excel(res_df)
+                            st.download_button(
+                                label=f"📥 {mode_name} 결과 엑셀 다운로드",
+                                data=excel_data,
+                                file_name=f"{mode_name}_{datetime.now().strftime('%y%m%d_%H%M')}.xlsx",
+                                mime="application/vnd.ms-excel",
+                                key=f"dl_{mode_name}" # 고유 키
+                            )
+                elif not st.session_state.is_running:
+                    st.info("조회된 결과가 없습니다.")
+
+        with tab2: # 사건등록관리 (인증 로직 포함)
+            if 'authenticated' not in st.session_state: st.session_state.authenticated = False        
+            if not st.session_state.authenticated:
+                st.subheader("🔒 보안구역")
+                password = st.text_input("액세스 비밀번호를 입력하세요", type="password")                
+                if st.button("접속하기"):
+                    if password == "7840":
+                        st.session_state.authenticated = True
+                        st.rerun()
+                    else: st.error("비밀번호가 올바르지 않습니다.")
+            else:
+                if st.button("사건관리 로그아웃"):
+                    st.session_state.authenticated = False
+                    st.rerun()
+        
+                col_single, col_multi, col_view = st.columns([1, 1, 1.5])
+                with col_single:
+                    st.subheader('📝 건별 등록')
+                    with st.form(key='single_form', clear_on_submit=True):
+                        court = st.text_input("법원")
+                        number = st.text_input("사건번호")
+                        rel_person = st.text_input("관계자")
+                        pj_name = st.text_input("사업명")
+                        if st.form_submit_button("사건 등록"):
+                            if court and number and rel_person:
+                                new_row = {'법원': court, '사건번호': number, '관계자': rel_person, '사업명': pj_name}
+                                st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame([new_row])], ignore_index=True)
+                                st.session_state.df.to_excel(fname, index=False)
+                                st.success("등록 완료!")
+                                st.rerun()
+                
+                with col_multi:
+                    st.subheader('📦 대량 등록')
+                    raw_input = st.text_area("데이터 붙여넣기(법원, 번호, 관계자, 사업명)", height=200)
+                    if st.button("일괄 등록 실행"):
+                        if raw_input.strip():
+                            lines = raw_input.strip().split('\n')
+                            new_rows = []
+                            for line in lines:
+                                parts = [p.strip() for p in line.replace('\t', ',').split(',')]
+                                if len(parts) >= 4:
+                                    new_rows.append({'법원': parts[0], '사건번호': parts[1], '관계자': parts[2], '사업명': parts[3]})
+                            if new_rows:
+                                st.session_state.df = pd.concat([st.session_state.df, pd.DataFrame(new_rows)], ignore_index=True)
+                                st.session_state.df.to_excel(fname, index=False)
+                                st.success(f"{len(new_rows)}건 등록 완료!")
+                                st.rerun()
+
+                with col_view:
+                    st.subheader("📂 등록현황")
+                    pj_list = st.session_state.df['사업명'].unique().tolist() if not st.session_state.df.empty else []
+                    sel_pj = st.selectbox("사업명 필터", ["전체"] + pj_list)
+                    display_df = st.session_state.df if sel_pj == "전체" else st.session_state.df[st.session_state.df['사업명'] == sel_pj]
+                    
+                    edit_df = st.data_editor(display_df, num_rows="dynamic", use_container_width=True, key="db_editor", height=300)
+                    if st.button("💾 변경사항 최종 저장"):
+                        st.session_state.df = edit_df
+                        st.session_state.df.to_excel(fname, index=False)
+                        st.success("저장 완료!")
+
+if __name__ == "__main__":
+    main()
