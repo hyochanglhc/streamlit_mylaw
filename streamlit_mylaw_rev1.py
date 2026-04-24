@@ -382,7 +382,7 @@ def main():
                 st.subheader("🔒 보안구역")
                 password = st.text_input("액세스 비밀번호를 입력하세요", type="password")                
                 if st.button("접속하기"):
-                    if password == "7840":
+                    if password == "000000":
                         st.session_state.authenticated = True
                         st.rerun()
                     else: st.error("비밀번호가 올바르지 않습니다.")
