@@ -360,9 +360,18 @@ def main():
                     for idx, mode_name in enumerate(active_modes):
                         with res_tabs[idx]:
                             res_df = pd.DataFrame(st.session_state.all_results[mode_name])
-                            # 컬럼 순서 조정
-                            cols = ['법원','사건번호','관계자'] + [col for col in res_df.columns if col not in ['법원','사건번호','관계자']]                        
-                            res_df = res_df[cols]                        
+                            # 1. 필수 표시 우선순위 컬럼 정의
+                            priority_cols = ['법원', '사건번호', '관계자']
+                            
+                            # 2. 실제 데이터프레임에 존재하는 컬럼들만 추출
+                            # (res_df.columns에 있는 것들 중 priority_cols에 해당하는 것만 필터링)
+                            existing_priority = [c for c in priority_cols if c in res_df.columns]
+                            other_cols = [c for c in res_df.columns if c not in priority_cols]
+                            
+                            # 3. 존재하는 컬럼들로만 다시 구성
+                            final_cols = existing_priority + other_cols
+                            res_df = res_df[final_cols]
+                            # --- 수정 부분 끝 ---
                             st.dataframe(res_df, use_container_width=True, hide_index=True)
                             
                             excel_data = to_excel(res_df)
